@@ -29,3 +29,5 @@ temporary/
 
 # Mock EC Node build artifacts
 tools/mock_ec_node/build/
+build/
+.cache/

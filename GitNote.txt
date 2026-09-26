@@ -1,0 +1,21 @@
+# Git 常用操作备忘
+
+## 查看状态
+git status                    # 查看当前工作区状态
+git branch --show-current     # 查看当前分支
+
+## 更新代码
+git fetch origin              # 获取远端更新
+git switch <branch>           # 切换到指定分支
+git pull --ff-only            # 更新当前分支（仅快进）
+
+## 提交代码
+git add <file>                # 暂存文件
+git add .                     # 暂存所有修改
+git commit -m "message"       # 提交
+git push                      # 推送到远端
+
+## 重要提醒
+- git pull 只更新当前所在分支
+- pull / switch / merge 前先执行 git status 检查工作区
+- 推送前确认分支正确：git branch --show-current

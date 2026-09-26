@@ -57,6 +57,10 @@ sudo ip link set up can0
 # 6. 启动 Web UI（局域网可访问）
 python main.py web --host 0.0.0.0 --port 5000
 
+# 或使用快捷脚本（首次需要 chmod +x start_web.sh）
+chmod +x start_web.sh
+./start_web.sh --host 0.0.0.0 --port 5000
+
 # 7. 浏览器访问 http://<NUC_IP>:5000
 ```
 
@@ -216,12 +220,20 @@ messages:
 
 ## 日志
 
-### 自动记录
+### 日志记录模式
 
-所有模式运行时自动生成 JSONL 日志：
-```
-logs/comm_YYYYMMDD_HHMMSS.jsonl
-```
+**Web UI (Live/Demo 模式)**:
+- **不记录**: 不生成日志文件
+- **仅异常** (默认): 只记录未知 CAN ID 和验证失败的帧
+- **全部**: 保存所有接收到的帧
+
+**终端 monitor 模式**:
+- 自动记录所有帧
+
+**Replay 模式**:
+- 默认不重复生成日志
+
+日志保存位置: `logs/`
 
 ### 日志格式
 
@@ -427,8 +439,8 @@ git pull --ff-only
 
 ## 更多文档
 
-- `V1.1_验收报告.md` - 完整技术文档
-- `项目现状报告.md` - 项目现状总结
+- `docs/V1.1_验收报告.md` - 完整技术文档
+- `GitNote.txt` - Git 常用操作备忘
 
 ## 许可证
 
