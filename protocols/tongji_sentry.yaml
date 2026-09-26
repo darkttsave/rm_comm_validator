@@ -1,0 +1,117 @@
+# Tongji Sentry Communication Protocol
+# Based on TongjiSuperPower/sp_vision_25
+
+transport:
+  type: socketcan
+  interface: can0
+
+messages:
+  - name: quaternion
+    direction: rx
+    id: "0x01"
+    dlc: 8
+    description: "IMU quaternion data"
+
+    fields:
+      - name: x
+        offset: 0
+        type: int16
+        endian: big
+        scale: 0.0001
+
+      - name: y
+        offset: 2
+        type: int16
+        endian: big
+        scale: 0.0001
+
+      - name: z
+        offset: 4
+        type: int16
+        endian: big
+        scale: 0.0001
+
+      - name: w
+        offset: 6
+        type: int16
+        endian: big
+        scale: 0.0001
+
+    validators:
+      - type: quaternion_norm
+        fields: [w, x, y, z]
+        tolerance: 0.01
+
+  - name: robot_state
+    direction: rx
+    id: "0x110"
+    dlc: 8
+    description: "Robot state information"
+
+    fields:
+      - name: bullet_speed
+        offset: 0
+        type: int16
+        endian: big
+        scale: 0.01
+
+      - name: mode
+        offset: 2
+        type: uint8
+        enum:
+          0: idle
+          1: auto_aim
+          2: small_buff
+          3: big_buff
+          4: outpost
+
+      - name: shoot_mode
+        offset: 3
+        type: uint8
+        enum:
+          0: left_shoot
+          1: right_shoot
+          2: both_shoot
+
+      - name: ft_angle
+        offset: 4
+        type: int16
+        endian: big
+        scale: 0.0001
+
+    unused:
+      - offset: 6
+        length: 2
+
+  - name: command
+    direction: tx
+    id: "0xFF"
+    dlc: 8
+    description: "Vision to electronic control command"
+
+    fields:
+      - name: control
+        offset: 0
+        type: uint8
+
+      - name: shoot
+        offset: 1
+        type: uint8
+
+      - name: yaw
+        offset: 2
+        type: int16
+        endian: big
+        scale: 0.0001
+
+      - name: pitch
+        offset: 4
+        type: int16
+        endian: big
+        scale: 0.0001
+
+      - name: horizon_distance
+        offset: 6
+        type: int16
+        endian: big
+        scale: 0.0001

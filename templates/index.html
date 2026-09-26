@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RM Communication Validator</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>RM Communication Validator</h1>
+            <div class="header-info">
+                <span id="protocol-name">加载中...</span>
+                <span id="runtime">00:00:00</span>
+            </div>
+        </header>
+
+        <!-- Control Panel -->
+        <section class="control-panel">
+            <div class="mode-buttons">
+                <button id="btn-demo" class="btn btn-demo">Demo 模式</button>
+                <button id="btn-replay" class="btn btn-replay">Replay 模式</button>
+                <button id="btn-live" class="btn btn-live" disabled title="需要 Linux + SocketCAN">Live 模式 (不可用)</button>
+                <button id="btn-stop" class="btn btn-stop" disabled>停止</button>
+            </div>
+            <div class="mode-status">
+                <span id="mode-status">就绪</span>
+            </div>
+            <div class="error-injection">
+                <label>
+                    <input type="checkbox" id="chk-error-injection">
+                    Demo 错误注入
+                </label>
+            </div>
+        </section>
+
+        <!-- Replay File Selection -->
+        <section id="replay-section" class="replay-section" style="display: none;">
+            <h3>选择 JSONL 日志文件</h3>
+            <select id="replay-file-select" class="replay-select">
+                <option value="">-- 选择日志文件 --</option>
+            </select>
+            <button id="btn-start-replay" class="btn btn-primary">开始回放</button>
+        </section>
+
+        <!-- Statistics -->
+        <section class="statistics">
+            <h2>统计信息</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <span class="stat-label">总帧数</span>
+                    <span class="stat-value" id="stat-total">0</span>
+                </div>
+                <div class="stat-item stat-valid">
+                    <span class="stat-label">有效</span>
+                    <span class="stat-value" id="stat-valid">0</span>
+                </div>
+                <div class="stat-item stat-invalid">
+                    <span class="stat-label">无效</span>
+                    <span class="stat-value" id="stat-invalid">0</span>
+                </div>
+                <div class="stat-item stat-unknown">
+                    <span class="stat-label">未知</span>
+                    <span class="stat-value" id="stat-unknown">0</span>
+                </div>
+            </div>
+            <div class="rates" id="rates-container">
+                <!-- Frame rates will be inserted here -->
+            </div>
+        </section>
+
+        <!-- Messages -->
+        <section class="messages">
+            <div id="messages-container">
+                <p class="no-data">等待数据...</p>
+            </div>
+        </section>
+
+        <!-- Recent Events -->
+        <section class="events">
+            <h2>近期事件</h2>
+            <div id="events-container" class="events-list">
+                <p class="no-data">无事件</p>
+            </div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
