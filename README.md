@@ -97,7 +97,33 @@ python main.py web --host 0.0.0.0 --port 5000
 **功能**:
 - **Demo**: 点击"Demo 模式"，无需硬件自动生成数据
 - **Replay**: 选择 `logs/*.jsonl` 文件回放
-- **Live**: Web UI 暂未接入 SocketCAN Live（请使用终端模式）
+- **Live**: SocketCAN 实时监控（Linux 自动检测接口，支持接口切换）
+
+**Live 模式使用**（Linux）:
+```bash
+# 1. 创建虚拟 CAN 接口（测试用）
+sudo modprobe vcan
+sudo ip link add dev vcan0 type vcan
+sudo ip link set up vcan0
+
+# 2. 启动 Mock EC Node（终端 A）
+./tools/mock_ec_node/build/mock_ec_node vcan0 normal
+
+# 3. 启动 Web UI（终端 B）
+source .venv/bin/activate
+python main.py web --interface vcan0
+# 或使用真实 CAN: python main.py web --interface can0
+
+# 4. 浏览器访问 http://127.0.0.1:5000
+# 5. 点击 "Live 模式"，从下拉框选择接口（vcan0 或 can0），点击 "开始 Live"
+# 6. 实时查看 Quaternion 0x01 和 Robot State 0x110 数据
+```
+
+**接口切换**:
+- Linux: Web UI 自动检测可用的 `can0`, `vcan0` 等接口
+- 可在 Web 界面下拉框中切换接口（需先停止当前 Live）
+- 点击"刷新"按钮重新扫描接口
+- Windows: Live 模式不可用（显示"不可用"）
 
 **界面**:
 ```

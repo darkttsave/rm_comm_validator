@@ -45,6 +45,19 @@
             <button id="btn-start-replay" class="btn btn-primary">开始回放</button>
         </section>
 
+        <!-- Live Interface Selection -->
+        <section id="live-section" class="live-section" style="display: none;">
+            <h3>SocketCAN 接口</h3>
+            <div class="live-interface-selector">
+                <select id="live-interface-select" class="interface-select">
+                    <option value="">-- 选择接口 --</option>
+                </select>
+                <button id="btn-refresh-interfaces" class="btn btn-secondary">刷新</button>
+                <button id="btn-start-live" class="btn btn-primary">开始 Live</button>
+            </div>
+            <div id="live-status" class="live-status"></div>
+        </section>
+
         <!-- Statistics -->
         <section class="statistics">
             <h2>统计信息</h2>

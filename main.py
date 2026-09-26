@@ -140,6 +140,10 @@ def main():
         default=5000,
         help='Port number (default: 5000)'
     )
+    web_parser.add_argument(
+        '--interface',
+        help='Default SocketCAN interface (can be changed in UI)'
+    )
 
     args = parser.parse_args()
 
@@ -149,7 +153,8 @@ def main():
     elif args.command == 'web':
         # Import web_app here to avoid loading Flask if not needed
         from web_app import run_web
-        run_web(args.protocol, args.host, args.port)
+        interface = getattr(args, 'interface', None)
+        run_web(args.protocol, args.host, args.port, interface)
         return 0
     else:
         parser.print_help()

@@ -14,10 +14,12 @@ document.addEventListener('DOMContentLoaded', function() {
 function setupEventHandlers() {
     document.getElementById('btn-demo').addEventListener('click', startDemo);
     document.getElementById('btn-replay').addEventListener('click', showReplayPanel);
-    document.getElementById('btn-live').addEventListener('click', showLiveWarning);
+    document.getElementById('btn-live').addEventListener('click', showLivePanel);
     document.getElementById('btn-stop').addEventListener('click', stopMonitoring);
     document.getElementById('chk-error-injection').addEventListener('change', toggleErrorInjection);
     document.getElementById('btn-start-replay').addEventListener('click', startReplay);
+    document.getElementById('btn-start-live').addEventListener('click', startLive);
+    document.getElementById('btn-refresh-interfaces').addEventListener('click', loadSocketCANInterfaces);
 }
 
 // Start periodic updates
@@ -47,6 +49,9 @@ async function loadStatus() {
 
         // Load log files for replay
         loadLogFiles();
+
+        // Load SocketCAN interfaces and update Live button
+        await loadSocketCANInterfaces();
     } catch (error) {
         console.error('Failed to load status:', error);
     }
@@ -83,10 +88,21 @@ async function updateStatus() {
         // Update buttons
         document.getElementById('btn-demo').disabled = data.running;
         document.getElementById('btn-replay').disabled = data.running;
+        document.getElementById('btn-live').disabled = data.running;
         document.getElementById('btn-stop').disabled = !data.running;
 
         // Update error injection checkbox
         document.getElementById('chk-error-injection').checked = data.error_injection;
+
+        // Update Live mode status display
+        if (data.mode === 'live') {
+            const liveStatus = document.getElementById('live-status');
+            if (data.connection_status === 'connected') {
+                liveStatus.innerHTML = `<span class="status-connected">✓ 已连接到 ${data.interface}</span>`;
+            } else if (data.connection_status === 'error') {
+                liveStatus.innerHTML = `<span class="status-error">✗ 连接失败: ${data.last_error || '未知错误'}</span>`;
+            }
+        }
 
     } catch (error) {
         console.error('Failed to update status:', error);
@@ -321,6 +337,8 @@ async function stopMonitoring() {
             headers: {'Content-Type': 'application/json'}
         });
         await response.json();
+        hideLivePanel();
+        hideReplayPanel();
     } catch (error) {
         console.error('Failed to stop:', error);
     }
@@ -339,9 +357,98 @@ async function toggleErrorInjection() {
     }
 }
 
-// Show live warning
-function showLiveWarning() {
-    alert('Live SocketCAN 监控需要 Linux 环境。\n\n当前 Windows 环境不支持。\n请使用 Demo 或 Replay 模式。');
+// Load SocketCAN interfaces
+async function loadSocketCANInterfaces() {
+    try {
+        const response = await fetch('/api/socketcan_interfaces');
+        const data = await response.json();
+
+        const liveBtn = document.getElementById('btn-live');
+        const select = document.getElementById('live-interface-select');
+
+        if (data.platform !== 'linux') {
+            liveBtn.disabled = true;
+            liveBtn.title = '需要 Linux + SocketCAN';
+            liveBtn.textContent = 'Live 模式 (不可用)';
+            return;
+        }
+
+        if (data.interfaces.length === 0) {
+            liveBtn.disabled = false;
+            liveBtn.title = '点击查看详情';
+            liveBtn.textContent = 'Live 模式 (无接口)';
+            return;
+        }
+
+        // Enable Live button
+        liveBtn.disabled = false;
+        liveBtn.title = '启动 SocketCAN 实时监控';
+        liveBtn.textContent = 'Live 模式';
+
+        // Populate interface selector
+        select.innerHTML = '';
+        for (const iface of data.interfaces) {
+            const option = document.createElement('option');
+            option.value = iface;
+            option.textContent = iface;
+            if (iface === data.default) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        }
+
+        // Show status if no interfaces
+        const liveStatus = document.getElementById('live-status');
+        if (data.interfaces.length === 0) {
+            liveStatus.innerHTML = '<span class="status-warning">⚠ 无可用 SocketCAN 接口</span>';
+        } else {
+            liveStatus.innerHTML = '';
+        }
+
+    } catch (error) {
+        console.error('Failed to load SocketCAN interfaces:', error);
+    }
+}
+
+// Show Live panel
+function showLivePanel() {
+    loadSocketCANInterfaces();
+    document.getElementById('live-section').style.display = 'block';
+    hideReplayPanel();
+}
+
+// Hide Live panel
+function hideLivePanel() {
+    document.getElementById('live-section').style.display = 'none';
+}
+
+// Start Live mode
+async function startLive() {
+    const select = document.getElementById('live-interface-select');
+    const interface = select.value;
+
+    if (!interface) {
+        alert('请选择一个 SocketCAN 接口');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/start_live', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({interface: interface})
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            hideLivePanel();
+        } else {
+            alert('启动 Live 模式失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('Failed to start Live mode:', error);
+        alert('启动 Live 模式失败: ' + error.message);
+    }
 }
 
 // Helper functions

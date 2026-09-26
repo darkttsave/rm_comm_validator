@@ -146,6 +146,60 @@ body {
     font-size: 14px;
 }
 
+/* Live Section */
+.live-section {
+    background-color: #252526;
+    padding: 20px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.live-section h3 {
+    margin-bottom: 15px;
+    color: #007acc;
+}
+
+.live-interface-selector {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    flex-wrap: wrap;
+}
+
+.interface-select {
+    flex: 1;
+    min-width: 200px;
+    padding: 10px;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #3e3e3e;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+}
+
+.live-status {
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.status-connected {
+    color: #4CAF50;
+}
+
+.status-error {
+    color: #f44336;
+}
+
+.status-warning {
+    color: #FF9800;
+}
+
 /* Statistics */
 .statistics {
     background-color: #252526;

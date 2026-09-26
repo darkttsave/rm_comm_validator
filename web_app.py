@@ -11,6 +11,8 @@ from decoder import Decoder
 from validator import Validator
 from demo_source import DemoSource
 from replay_source import ReplaySource
+from live_can_source import LiveCANSource
+from socketcan_utils import is_linux, get_available_socketcan_interfaces, interface_exists
 
 
 app = Flask(__name__)
@@ -28,6 +30,11 @@ class AppState:
 
         self.running = False
         self.error_injection = False
+
+        # Live mode specific
+        self.interface = None  # Current SocketCAN interface
+        self.connection_status = None  # 'connected', 'disconnected', 'error'
+        self.last_error = None
 
         # Statistics
         self.total_frames = 0
@@ -47,6 +54,12 @@ class AppState:
         self.start_time = None
 
 state = AppState()
+
+# Global configuration
+config = {
+    'default_interface': None,  # Set from CLI or YAML
+    'available_interfaces': []
+}
 
 
 def load_protocol(protocol_path):
@@ -152,13 +165,57 @@ def start_replay(jsonl_path):
         return str(e)
 
 
+def start_live(interface):
+    """Start live SocketCAN mode."""
+    if state.running:
+        return {'success': False, 'error': 'Another source is already running'}
+
+    # Check platform
+    if not is_linux():
+        return {'success': False, 'error': 'Live SocketCAN mode requires Linux'}
+
+    # Check interface exists
+    if not interface_exists(interface):
+        return {'success': False, 'error': f'SocketCAN interface "{interface}" not found'}
+
+    try:
+        state.mode = 'live'
+        state.interface = interface
+        state.source = LiveCANSource(interface)
+
+        # Connect to SocketCAN
+        state.source.connect()
+        state.connection_status = 'connected'
+        state.last_error = None
+
+        # Reset statistics
+        reset_statistics()
+
+        # Start receiving
+        state.running = True
+        state.source.start(handle_frame)
+
+        return {'success': True}
+
+    except Exception as e:
+        state.connection_status = 'error'
+        state.last_error = str(e)
+        state.mode = None
+        return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
+
+
 def stop_source():
     """Stop current source."""
     if state.source and state.running:
         state.running = False
         if hasattr(state.source, 'stop'):
             state.source.stop()
+        if hasattr(state.source, 'disconnect'):
+            state.source.disconnect()
+
     state.mode = None
+    state.interface = None
+    state.connection_status = 'disconnected'
 
 
 def reset_statistics():
@@ -204,6 +261,9 @@ def api_status():
         'mode': state.mode,
         'running': state.running,
         'error_injection': state.error_injection,
+        'interface': state.interface,
+        'connection_status': state.connection_status,
+        'last_error': state.last_error,
         'runtime': runtime,
         'statistics': {
             'total': state.total_frames,
@@ -315,15 +375,67 @@ def api_list_logs():
     return jsonify(sorted(logs, key=lambda x: x['name'], reverse=True))
 
 
-def run_web(protocol_path, host='127.0.0.1', port=5000):
+@app.route('/api/start_live', methods=['POST'])
+def api_start_live():
+    """Start live SocketCAN mode."""
+    data = request.json
+    interface = data.get('interface')
+
+    if not interface:
+        return jsonify({'success': False, 'error': 'No interface provided'})
+
+    result = start_live(interface)
+    return jsonify(result)
+
+
+@app.route('/api/socketcan_interfaces')
+def api_socketcan_interfaces():
+    """Get available SocketCAN interfaces."""
+    return jsonify({
+        'platform': 'linux' if is_linux() else 'other',
+        'interfaces': config['available_interfaces'],
+        'default': config['default_interface']
+    })
+
+
+def run_web(protocol_path, host='127.0.0.1', port=5000, interface=None):
     """Run web server."""
     # Load protocol
     load_protocol(protocol_path)
 
+    # Detect available SocketCAN interfaces
+    config['available_interfaces'] = get_available_socketcan_interfaces()
+
+    # Determine default interface
+    if interface:
+        # CLI argument takes precedence
+        config['default_interface'] = interface
+    elif state.protocol and state.protocol.messages:
+        # Try to get from protocol YAML
+        try:
+            yaml_interface = state.protocol.config.get('transport', {}).get('interface', 'can0')
+            config['default_interface'] = yaml_interface
+        except:
+            config['default_interface'] = 'can0'
+    else:
+        config['default_interface'] = 'can0'
+
+    # Print startup banner
     print(f"\n=== RM Communication Validator Web UI ===")
     print(f"Protocol: {protocol_path}")
+    print(f"Default interface: {config['default_interface']}")
+
+    if is_linux():
+        if config['available_interfaces']:
+            print(f"Available SocketCAN interfaces: {', '.join(config['available_interfaces'])}")
+        else:
+            print("Available SocketCAN interfaces: none")
+            print("Live mode unavailable until a CAN/vCAN interface is created.")
+    else:
+        print("Platform: Non-Linux (Live mode unavailable)")
+
     print(f"Server: http://{host}:{port}")
-    print(f"\nOpen your browser to start monitoring.")
+    print(f"\nLive interface can also be selected from the Web UI.")
     print("Press Ctrl+C to stop.\n")
 
     app.run(host=host, port=port, debug=False, threaded=True)
