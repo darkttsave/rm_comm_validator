@@ -46,6 +46,8 @@ Linux 专用 C++ Mock 电控节点，用于通过 SocketCAN 测试 RM Communicat
 
 ## Linux 测试流程
 
+**注意**: 以下命令默认从仓库根目录执行。
+
 ### 前置条件
 - Ubuntu 20.04+ 或其他支持 SocketCAN 的 Linux 发行版
 - CMake 3.10+
@@ -80,8 +82,6 @@ ls -lh build/mock_ec_node
 
 ### 步骤 3: 启动 Validator（终端 1）
 ```bash
-cd ~/rm_comm_validator  # 或你的项目路径
-
 # 激活虚拟环境
 source .venv/bin/activate
 
@@ -93,8 +93,6 @@ python main.py monitor \
 
 ### 步骤 4: 启动 Mock Node（终端 2）
 ```bash
-cd ~/rm_comm_validator
-
 # 正常模式
 ./tools/mock_ec_node/build/mock_ec_node vcan0 normal
 

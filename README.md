@@ -97,7 +97,7 @@ python main.py web --host 0.0.0.0 --port 5000
 **功能**:
 - **Demo**: 点击"Demo 模式"，无需硬件自动生成数据
 - **Replay**: 选择 `logs/*.jsonl` 文件回放
-- **Live**: 自动连接 SocketCAN（仅 Linux）
+- **Live**: Web UI 暂未接入 SocketCAN Live（请使用终端模式）
 
 **界面**:
 ```
@@ -345,6 +345,29 @@ python tests/test_decoder.py
 python tests/test_demo_source.py      # V1.1
 python tests/test_replay_source.py    # V1.1
 ```
+
+---
+
+## Git 更新
+
+从远端获取并切换到指定分支：
+
+```bash
+# 查看当前状态
+git status
+git branch --show-current
+
+# 获取远端更新
+git fetch origin
+
+# 切换到目标分支
+git switch <branch>
+
+# 更新当前分支（仅快进合并）
+git pull --ff-only
+```
+
+**注意**: `git pull` 只更新当前所在分支，不影响其他分支。
 
 ---
 
