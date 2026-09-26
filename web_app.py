@@ -12,6 +12,7 @@ from validator import Validator
 from demo_source import DemoSource
 from replay_source import ReplaySource
 from live_can_source import LiveCANSource
+from recorder import Recorder
 from socketcan_utils import is_linux, get_available_socketcan_interfaces, interface_exists
 
 
@@ -35,6 +36,12 @@ class AppState:
         self.interface = None  # Current SocketCAN interface
         self.connection_status = None  # 'connected', 'disconnected', 'error'
         self.last_error = None
+
+        # Logging
+        self.log_mode = 'errors'  # 'none', 'errors', 'all'
+        self.recorder = None
+        self.recorded_frames = 0
+        self.log_file = None
 
         # Statistics
         self.total_frames = 0
@@ -89,6 +96,12 @@ def handle_frame(can_id, raw_data, timestamp):
         state.unknown_frames += 1
         event = f"{time.strftime('%H:%M:%S')} Unknown CAN ID: 0x{can_id:X}"
         add_event(event)
+
+        # Record unknown frame if logging errors or all
+        if state.recorder and state.log_mode in ('errors', 'all'):
+            state.recorder.record(None, None, can_id, len(raw_data), raw_data, timestamp)
+            state.recorded_frames += 1
+
         return
 
     # Validate
@@ -105,6 +118,20 @@ def handle_frame(can_id, raw_data, timestamp):
             if not v.passed:
                 event = f"{time.strftime('%H:%M:%S')} {decoded.message_name}: {v.check} failed"
                 add_event(event)
+
+    # Record frame based on log mode
+    if state.recorder:
+        should_record = False
+        if state.log_mode == 'all':
+            should_record = True
+        elif state.log_mode == 'errors' and not all_passed:
+            should_record = True
+
+        if should_record:
+            state.recorder.record(
+                decoded, validation, can_id, len(raw_data), raw_data, timestamp
+            )
+            state.recorded_frames += 1
 
     # Store latest message by type
     state.latest_messages[decoded.message_name] = {
@@ -133,6 +160,9 @@ def start_demo():
     # Reset statistics
     reset_statistics()
 
+    # Start recorder if needed
+    start_recorder_if_needed('demo')
+
     # Start in background thread
     state.running = True
     state.source_thread = threading.Thread(target=state.source.start, args=(handle_frame,))
@@ -153,6 +183,9 @@ def start_replay(jsonl_path):
 
         # Reset statistics
         reset_statistics()
+
+        # Replay mode: don't record by default to avoid duplicate logs
+        # Recorder remains None
 
         # Start in background thread
         state.running = True
@@ -191,6 +224,63 @@ def start_live(interface):
         # Reset statistics
         reset_statistics()
 
+        # Start recorder if needed
+        start_recorder_if_needed('live', interface)
+
+        # Start receiving
+        state.running = True
+        state.source.start(handle_frame)
+
+        return {'success': True}
+
+    except Exception as e:
+        state.connection_status = 'error'
+        state.last_error = str(e)
+        state.mode = None
+        stop_recorder_if_active()  # Clean up recorder on failure
+        return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
+
+
+def start_recorder_if_needed(mode, interface=None):
+    """Start recorder based on log mode."""
+    if state.log_mode == 'none':
+        return
+
+    try:
+        state.recorder = Recorder()
+        # Generate filename
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if mode == 'live' and interface:
+            filename = f"{mode}_{interface}_{timestamp}.jsonl"
+        else:
+            filename = f"{mode}_{timestamp}.jsonl"
+
+        state.recorder.start(filename)
+        state.log_file = state.recorder.log_file
+        state.recorded_frames = 0
+    except Exception as e:
+        print(f"Warning: Failed to start recorder: {e}")
+        state.recorder = None
+        state.log_file = None
+
+
+def stop_recorder_if_active():
+    """Stop recorder and clean up."""
+    if state.recorder:
+        try:
+            state.recorder.stop()
+        except Exception as e:
+            print(f"Warning: Error stopping recorder: {e}")
+        finally:
+            state.recorder = None
+            state.log_file = None
+        state.connection_status = 'connected'
+        state.last_error = None
+
+        # Reset statistics
+        reset_statistics()
+
         # Start receiving
         state.running = True
         state.source.start(handle_frame)
@@ -212,6 +302,9 @@ def stop_source():
             state.source.stop()
         if hasattr(state.source, 'disconnect'):
             state.source.disconnect()
+
+    # Stop recorder
+    stop_recorder_if_active()
 
     state.mode = None
     state.interface = None
@@ -264,6 +357,18 @@ def api_status():
         'interface': state.interface,
         'connection_status': state.connection_status,
         'last_error': state.last_error,
+        'log_mode': state.log_mode,
+        'recording': state.recorder is not None,
+        'log_file': state.log_file,
+        'recorded_frames': state.recorded_frames,
+        'runtime': runtime,
+        'statistics': {
+            'total': state.total_frames,
+            'valid': state.valid_frames,
+            'invalid': state.invalid_frames,
+            'unknown': state.unknown_frames
+        }
+    })
         'runtime': runtime,
         'statistics': {
             'total': state.total_frames,
@@ -396,6 +501,22 @@ def api_socketcan_interfaces():
         'interfaces': config['available_interfaces'],
         'default': config['default_interface']
     })
+
+
+@app.route('/api/set_log_mode', methods=['POST'])
+def api_set_log_mode():
+    """Set logging mode."""
+    if state.running:
+        return jsonify({'success': False, 'error': 'Cannot change log mode while running. Stop first.'})
+
+    data = request.json
+    mode = data.get('mode')
+
+    if mode not in ('none', 'errors', 'all'):
+        return jsonify({'success': False, 'error': 'Invalid log mode'})
+
+    state.log_mode = mode
+    return jsonify({'success': True, 'mode': mode})
 
 
 def run_web(protocol_path, host='127.0.0.1', port=5000, interface=None):

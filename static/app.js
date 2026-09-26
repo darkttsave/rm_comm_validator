@@ -20,6 +20,7 @@ function setupEventHandlers() {
     document.getElementById('btn-start-replay').addEventListener('click', startReplay);
     document.getElementById('btn-start-live').addEventListener('click', startLive);
     document.getElementById('btn-refresh-interfaces').addEventListener('click', loadSocketCANInterfaces);
+    document.getElementById('log-mode-select').addEventListener('change', setLogMode);
 }
 
 // Start periodic updates
@@ -90,6 +91,14 @@ async function updateStatus() {
         document.getElementById('btn-replay').disabled = data.running;
         document.getElementById('btn-live').disabled = data.running;
         document.getElementById('btn-stop').disabled = !data.running;
+
+        // Update log mode selector
+        const logModeSelect = document.getElementById('log-mode-select');
+        logModeSelect.disabled = data.running;
+        logModeSelect.value = data.log_mode;
+
+        // Update log status display
+        updateLogStatus(data);
 
         // Update error injection checkbox
         document.getElementById('chk-error-injection').checked = data.error_injection;
@@ -460,4 +469,62 @@ function formatBytes(bytes) {
     if (bytes < 1024) return bytes + ' B';
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// Update log status display
+function updateLogStatus(data) {
+    const logStatus = document.getElementById('log-status');
+    if (!logStatus) return;
+
+    if (!data.running) {
+        logStatus.innerHTML = '';
+        return;
+    }
+
+    let statusHtml = '<div class="log-status-info">';
+
+    // Log mode
+    const modeText = {
+        'none': '不记录',
+        'errors': '仅异常',
+        'all': '全部'
+    }[data.log_mode] || data.log_mode;
+
+    statusHtml += `<span>模式: ${modeText}</span>`;
+
+    // Recording status
+    if (data.recording && data.log_file) {
+        const fileName = data.log_file.split('/').pop().split('\\').pop();
+        statusHtml += ` | <span class="status-recording">● 记录中: ${fileName}</span>`;
+        statusHtml += ` | <span>已记录: ${data.recorded_frames} 帧</span>`;
+    } else if (data.log_mode !== 'none') {
+        statusHtml += ` | <span>未记录</span>`;
+    }
+
+    statusHtml += '</div>';
+    logStatus.innerHTML = statusHtml;
+}
+
+// Set log mode
+async function setLogMode() {
+    const select = document.getElementById('log-mode-select');
+    const mode = select.value;
+
+    try {
+        const response = await fetch('/api/set_log_mode', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({mode: mode})
+        });
+        const data = await response.json();
+
+        if (!data.success) {
+            alert('设置日志模式失败: ' + (data.error || '未知错误'));
+            // Revert to previous value
+            await updateStatus();
+        }
+    } catch (error) {
+        console.error('Failed to set log mode:', error);
+        alert('设置日志模式失败: ' + error.message);
+    }
 }

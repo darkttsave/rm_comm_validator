@@ -110,6 +110,7 @@ body {
 .error-injection {
     display: flex;
     align-items: center;
+    margin-bottom: 10px;
 }
 
 .error-injection label {
@@ -120,6 +121,52 @@ body {
 .error-injection input[type="checkbox"] {
     margin-right: 8px;
     cursor: pointer;
+}
+
+/* Log Mode Selector */
+.log-mode-selector {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.log-mode-selector label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.log-mode-select {
+    padding: 8px 12px;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #3e3e3e;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.log-mode-select:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.log-status {
+    padding: 10px;
+    background-color: #1e1e1e;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.log-status-info {
+    display: flex;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.status-recording {
+    color: #f44336;
+    font-weight: 500;
 }
 
 /* Replay Section */

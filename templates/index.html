@@ -34,6 +34,17 @@
                     Demo 错误注入
                 </label>
             </div>
+            <div class="log-mode-selector">
+                <label>
+                    日志记录:
+                    <select id="log-mode-select" class="log-mode-select">
+                        <option value="none">不记录</option>
+                        <option value="errors" selected>仅异常</option>
+                        <option value="all">全部</option>
+                    </select>
+                </label>
+            </div>
+            <div id="log-status" class="log-status"></div>
         </section>
 
         <!-- Replay File Selection -->
