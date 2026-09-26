@@ -275,23 +275,6 @@ def stop_recorder_if_active():
         finally:
             state.recorder = None
             state.log_file = None
-        state.connection_status = 'connected'
-        state.last_error = None
-
-        # Reset statistics
-        reset_statistics()
-
-        # Start receiving
-        state.running = True
-        state.source.start(handle_frame)
-
-        return {'success': True}
-
-    except Exception as e:
-        state.connection_status = 'error'
-        state.last_error = str(e)
-        state.mode = None
-        return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
 
 
 def stop_source():
@@ -361,14 +344,6 @@ def api_status():
         'recording': state.recorder is not None,
         'log_file': state.log_file,
         'recorded_frames': state.recorded_frames,
-        'runtime': runtime,
-        'statistics': {
-            'total': state.total_frames,
-            'valid': state.valid_frames,
-            'invalid': state.invalid_frames,
-            'unknown': state.unknown_frames
-        }
-    })
         'runtime': runtime,
         'statistics': {
             'total': state.total_frames,
