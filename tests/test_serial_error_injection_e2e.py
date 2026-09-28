@@ -60,6 +60,14 @@ def build_mock_frame(mode, q_w, q_x, q_y, q_z, corrupt_crc=False):
 @pytest.fixture
 def protocol():
     """Load Tongji Gimbal Serial protocol."""
+    from protocol import Protocol
+    protocol_path = Path(__file__).parent.parent / 'protocols' / 'tongji_gimbal_serial.yaml'
+    return Protocol(str(protocol_path))
+
+
+@pytest.fixture
+def protocol_dict():
+    """Load protocol as dict for framer setup."""
     import yaml
     protocol_path = Path(__file__).parent.parent / 'protocols' / 'tongji_gimbal_serial.yaml'
     with open(protocol_path, 'r', encoding='utf-8') as f:
@@ -79,13 +87,13 @@ def validator(protocol):
 
 
 @pytest.fixture
-def framer(protocol):
+def framer(protocol_dict):
     """Create framer with Tongji protocol transport config."""
     # Extract header from transport
-    header_hex = protocol['transport']['header']
+    header_hex = protocol_dict['transport']['header']
     header = bytes.fromhex(header_hex)
     # Extract frame_length from first RX message
-    rx_message = [msg for msg in protocol['messages'] if msg['direction'] == 'rx'][0]
+    rx_message = [msg for msg in protocol_dict['messages'] if msg['direction'] == 'rx'][0]
     frame_length = rx_message['frame_length']
     return SerialFramer(header=header, frame_length=frame_length)
 
@@ -94,7 +102,7 @@ def framer(protocol):
 # Normal mode: all validations PASS
 # --------------------------------------------------------------------------
 
-def test_normal_mode_all_pass(framer, decoder, validator):
+def test_normal_mode_all_pass(framer, decoder, validator, protocol_dict):
     """Normal mode: FRAME_LENGTH PASS, MODE_ENUM PASS, QUAT_NORM PASS, CRC16 PASS."""
     frame = build_mock_frame(
         mode=1,  # Valid AUTO_AIM
@@ -105,17 +113,24 @@ def test_normal_mode_all_pass(framer, decoder, validator):
     frames = framer.feed(frame)
     assert len(frames) == 1
 
-    # Decoder parses
-    messages = decoder.decode_frame(frames[0])
-    assert len(messages) == 1
-    msg = messages[0]
-    assert msg['name'] == 'gimbal_to_vision'
+    # Determine message name (same logic as web_app.py handle_serial_frame)
+    message_name = None
+    for msg in protocol_dict['messages']:
+        if msg['direction'] == 'rx' and msg['frame_length'] == len(frames[0]):
+            message_name = msg['name']
+            break
+    assert message_name == 'gimbal_to_vision'
+
+    # Decoder parses (using actual API: decode_message)
+    decoded = decoder.decode_message(message_name, frames[0])
+    assert decoded is not None
+    assert decoded.message_name == 'gimbal_to_vision'
 
     # Validator checks
-    results = validator.validate(msg)
+    results = validator.validate(decoded)
 
     # Check all validations PASS
-    validation_map = {v['check']: v['passed'] for v in results}
+    validation_map = {v.check: v.passed for v in results}
     assert validation_map['FRAME_LENGTH'] is True
     assert validation_map['MODE_ENUM'] is True
     assert validation_map['QUAT_NORM'] is True
@@ -126,7 +141,7 @@ def test_normal_mode_all_pass(framer, decoder, validator):
 # Invalid mode: MODE_ENUM FAIL, others PASS
 # --------------------------------------------------------------------------
 
-def test_invalid_mode_enum_fail(framer, decoder, validator):
+def test_invalid_mode_enum_fail(framer, decoder, validator, protocol_dict):
     """Invalid mode: MODE_ENUM FAIL, QUAT_NORM PASS, CRC16 PASS."""
     frame = build_mock_frame(
         mode=99,  # Invalid mode (valid range: 0-3)
@@ -136,12 +151,19 @@ def test_invalid_mode_enum_fail(framer, decoder, validator):
     frames = framer.feed(frame)
     assert len(frames) == 1
 
-    messages = decoder.decode_frame(frames[0])
-    assert len(messages) == 1
-    msg = messages[0]
+    # Determine message name
+    message_name = None
+    for msg in protocol_dict['messages']:
+        if msg['direction'] == 'rx' and msg['frame_length'] == len(frames[0]):
+            message_name = msg['name']
+            break
+    assert message_name == 'gimbal_to_vision'
 
-    results = validator.validate(msg)
-    validation_map = {v['check']: v['passed'] for v in results}
+    decoded = decoder.decode_message(message_name, frames[0])
+    assert decoded is not None
+
+    results = validator.validate(decoded)
+    validation_map = {v.check: v.passed for v in results}
 
     # MODE_ENUM should FAIL
     assert validation_map['MODE_ENUM'] is False
@@ -156,7 +178,7 @@ def test_invalid_mode_enum_fail(framer, decoder, validator):
 # Invalid quaternion: QUAT_NORM FAIL, others PASS
 # --------------------------------------------------------------------------
 
-def test_invalid_quaternion_norm_fail(framer, decoder, validator):
+def test_invalid_quaternion_norm_fail(framer, decoder, validator, protocol_dict):
     """Invalid quaternion: QUAT_NORM FAIL, MODE_ENUM PASS, CRC16 PASS."""
     frame = build_mock_frame(
         mode=1,
@@ -166,12 +188,19 @@ def test_invalid_quaternion_norm_fail(framer, decoder, validator):
     frames = framer.feed(frame)
     assert len(frames) == 1
 
-    messages = decoder.decode_frame(frames[0])
-    assert len(messages) == 1
-    msg = messages[0]
+    # Determine message name
+    message_name = None
+    for msg in protocol_dict['messages']:
+        if msg['direction'] == 'rx' and msg['frame_length'] == len(frames[0]):
+            message_name = msg['name']
+            break
+    assert message_name == 'gimbal_to_vision'
 
-    results = validator.validate(msg)
-    validation_map = {v['check']: v['passed'] for v in results}
+    decoded = decoder.decode_message(message_name, frames[0])
+    assert decoded is not None
+
+    results = validator.validate(decoded)
+    validation_map = {v.check: v.passed for v in results}
 
     # QUAT_NORM should FAIL
     assert validation_map['QUAT_NORM'] is False
@@ -186,7 +215,7 @@ def test_invalid_quaternion_norm_fail(framer, decoder, validator):
 # Bad CRC: CRC16 FAIL, others PASS
 # --------------------------------------------------------------------------
 
-def test_bad_crc_fail(framer, decoder, validator):
+def test_bad_crc_fail(framer, decoder, validator, protocol_dict):
     """Bad CRC: CRC16 FAIL, MODE_ENUM PASS, QUAT_NORM PASS."""
     frame = build_mock_frame(
         mode=1,
@@ -197,12 +226,19 @@ def test_bad_crc_fail(framer, decoder, validator):
     frames = framer.feed(frame)
     assert len(frames) == 1
 
-    messages = decoder.decode_frame(frames[0])
-    assert len(messages) == 1
-    msg = messages[0]
+    # Determine message name
+    message_name = None
+    for msg in protocol_dict['messages']:
+        if msg['direction'] == 'rx' and msg['frame_length'] == len(frames[0]):
+            message_name = msg['name']
+            break
+    assert message_name == 'gimbal_to_vision'
 
-    results = validator.validate(msg)
-    validation_map = {v['check']: v['passed'] for v in results}
+    decoded = decoder.decode_message(message_name, frames[0])
+    assert decoded is not None
+
+    results = validator.validate(decoded)
+    validation_map = {v.check: v.passed for v in results}
 
     # CRC16 should FAIL
     assert validation_map['CRC16'] is False
@@ -230,8 +266,13 @@ def test_single_variable_error_injection():
     frame_length = rx_message['frame_length']
 
     framer = SerialFramer(header=header, frame_length=frame_length)
-    decoder = Decoder(protocol)
-    validator = Validator(protocol)
+    
+    # Load as Protocol object for Decoder/Validator
+    from protocol import Protocol
+    protocol_obj = Protocol(str(protocol_path))
+    
+    decoder = Decoder(protocol_obj)
+    validator = Validator(protocol_obj)
 
     # Test each error mode
     test_cases = [
@@ -254,10 +295,18 @@ def test_single_variable_error_injection():
 
     for case in test_cases:
         frames = framer.feed(case['frame'])
-        messages = decoder.decode_frame(frames[0])
-        results = validator.validate(messages[0])
 
-        validation_map = {v['check']: v['passed'] for v in results}
+        # Determine message name
+        message_name = None
+        for msg in protocol['messages']:
+            if msg['direction'] == 'rx' and msg['frame_length'] == len(frames[0]):
+                message_name = msg['name']
+                break
+
+        decoded = decoder.decode_message(message_name, frames[0])
+        results = validator.validate(decoded)
+
+        validation_map = {v.check: v.passed for v in results}
 
         # Count failures
         failures = [check for check, passed in validation_map.items() if not passed]

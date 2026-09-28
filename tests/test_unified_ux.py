@@ -404,6 +404,9 @@ def test_virtual_can_auto_start(monkeypatch):
             started.clear()
             return {'success': True}
 
+        def cleanup(self):
+            pass
+
     fake_sim = FakeCANSim()
     monkeypatch.setattr(web_app, 'can_simulator', fake_sim)
 
