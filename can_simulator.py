@@ -35,6 +35,9 @@ class CANSimulator:
 
     MOCK_START_GRACE = 0.3
 
+    # Valid error injection modes (whitelist)
+    VALID_MODES = ['normal', 'invalid_enum', 'invalid_quaternion', 'unknown_id']
+
     def __init__(self, repo_root=None):
         if repo_root is None:
             repo_root = Path(__file__).parent
@@ -43,6 +46,7 @@ class CANSimulator:
         self._mock_log = None
         self.status = self.STATUS_IDLE
         self.error = None
+        self.current_mode = 'normal'  # Track current error injection mode
         self._lock = threading.Lock()
 
     # ---- helpers ---------------------------------------------------------
@@ -108,9 +112,14 @@ class CANSimulator:
 
     # ---- public lifecycle -------------------------------------------------
 
-    def start(self):
+    def start(self, mode='normal'):
+        """Start the CAN simulator with specified error injection mode.
+
+        Args:
+            mode: Error injection mode from VALID_MODES whitelist
+        """
         with self._lock:
-            return self._start_locked()
+            return self._start_locked(mode)
 
     def stop(self):
         with self._lock:
@@ -120,7 +129,13 @@ class CANSimulator:
         """Idempotent shutdown for process exit (atexit)."""
         self.stop()
 
-    def _start_locked(self):
+    def _start_locked(self, mode='normal'):
+        # Validate mode against whitelist
+        if mode not in self.VALID_MODES:
+            self.status = self.STATUS_ERROR
+            self.error = f'Invalid error injection mode: {mode}. Valid modes: {", ".join(self.VALID_MODES)}'
+            return {'success': False, 'error': self.error}
+
         if not self.mock_built:
             self.status = self.STATUS_ERROR
             self.error = 'Mock EC node not built. Run: cd tools/mock_ec_node && ./build.sh'
@@ -138,14 +153,16 @@ class CANSimulator:
         self._cleanup_processes()
         self.status = self.STATUS_STARTING
         self.error = None
+        self.current_mode = mode
 
-        # Start Mock EC node.
+        # Start Mock EC node with positional mode argument (NOT --mode)
         try:
             self._mock_log = self._open_log('can_simulator_mock.log')
             self.mock_proc = subprocess.Popen(
-                [str(self._mock_executable()), self.INTERFACE, '--mode', 'normal'],
+                [str(self._mock_executable()), self.INTERFACE, mode],  # Fixed: positional mode
                 stdout=self._mock_log,
                 stderr=self._mock_log,
+                shell=False  # Explicit: no shell injection
             )
         except Exception as e:
             self.status = self.STATUS_ERROR
@@ -187,4 +204,5 @@ class CANSimulator:
                 'error': self.error,
                 'interface': self.INTERFACE,
                 'label': self.LABEL,
+                'current_mode': self.current_mode,  # Include current error injection mode
             }

@@ -100,9 +100,11 @@ def run_mock(port, mode='normal', rate_hz=10):
 
             elif mode == 'invalid_quaternion':
                 # Invalid quaternion (not normalized)
+                # norm^2 = 0.5^2 + 0^2 + 0^2 + 0^2 = 0.25 (NOT 1.0)
+                # error = |0.25 - 1.0| = 0.75 >> tolerance 0.01
                 frame = build_frame(
                     mode=1,
-                    q_w=0.5, q_x=0.5, q_y=0.5, q_z=0.5,  # norm^2 = 1.0 but individual components wrong
+                    q_w=0.5, q_x=0.0, q_y=0.0, q_z=0.0,
                     yaw=0.1, yaw_vel=0.2,
                     pitch=-0.05, pitch_vel=0.03,
                     bullet_speed=28.5, bullet_count=123
