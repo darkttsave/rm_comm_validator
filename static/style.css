@@ -28,9 +28,37 @@ body {
     border-left: 4px solid #007acc;
 }
 
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
 .header h1 {
     color: #007acc;
-    margin-bottom: 10px;
+    margin: 0;
+}
+
+.runtime-badge {
+    padding: 6px 14px;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.runtime-badge.runtime-normal {
+    background-color: #2a2d2e;
+    color: #858585;
+    border: 1px solid #3e3e3e;
+}
+
+.runtime-badge.runtime-simulation {
+    background-color: #2a1a1a;
+    color: #FF9800;
+    border: 1px solid #FF9800;
 }
 
 .header-info {
@@ -541,10 +569,23 @@ body {
     gap: 8px;
 }
 
+.session-info {
+    flex: 1;
+    min-width: 200px;
+}
+
 #session-text {
     font-size: 15px;
     font-weight: 500;
     color: #d4d4d4;
+    display: block;
+}
+
+.session-backend {
+    font-size: 12px;
+    color: #4CAF50;
+    margin-top: 4px;
+    display: block;
 }
 
 #session-status {
@@ -588,26 +629,23 @@ body {
     margin-bottom: 12px;
 }
 
-.endpoint-selector,
-.live-interface-selector {
-    display: flex;
-    gap: 10px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-}
-
-.baudrate-row {
+.config-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
     margin-bottom: 12px;
     font-size: 14px;
+    color: #d4d4d4;
+}
+
+.config-row label {
+    min-width: 80px;
     color: #858585;
 }
 
-.baudrate-row input {
-    width: 120px;
-    padding: 8px 10px;
+.config-select {
+    flex: 1;
+    padding: 8px 12px;
     background-color: #252526;
     color: #d4d4d4;
     border: 1px solid #3e3e3e;
@@ -615,22 +653,29 @@ body {
     font-size: 14px;
 }
 
-.simulator-panel {
-    padding: 12px;
-    background-color: #252526;
-    border-radius: 4px;
-    margin-top: 8px;
+.endpoint-row {
+    display: flex;
+    gap: 8px;
+    flex: 1;
 }
 
-.simulator-panel #simulator-status {
-    display: block;
-    margin-bottom: 10px;
+.endpoint-row .config-select {
+    flex: 1;
+}
+
+.btn-small {
+    padding: 8px 12px;
     font-size: 13px;
 }
 
-.simulator-actions {
-    display: flex;
-    gap: 10px;
+#baudrate-row input {
+    width: 120px;
+    padding: 8px 10px;
+    background-color: #252526;
+    color: #d4d4d4;
+    border: 1px solid #3e3e3e;
+    border-radius: 4px;
+    font-size: 14px;
 }
 
 .live-error {

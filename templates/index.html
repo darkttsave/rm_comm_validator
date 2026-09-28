@@ -10,10 +10,14 @@
     <div class="container">
         <!-- Header -->
         <header class="header">
-            <h1>RM Communication Validator</h1>
+            <div class="header-top">
+                <h1>RM Communication Validator</h1>
+                <div class="runtime-badge" id="runtime-badge">
+                    <span id="runtime-mode">Normal</span>
+                </div>
+            </div>
             <div class="header-info">
-                <span id="protocol-name">加载中...</span>
-                <span id="runtime">00:00:00</span>
+                <span id="runtime-display">00:00:00</span>
             </div>
         </header>
 
@@ -21,7 +25,7 @@
         <section class="control-panel">
             <!-- Data source selection -->
             <div class="source-panel">
-                <h2 class="panel-title">数据源</h2>
+                <h2 class="panel-title">数据源 Data Source</h2>
                 <div class="source-buttons">
                     <button id="btn-src-demo" class="btn src-btn" data-src="demo">Demo</button>
                     <button id="btn-src-replay" class="btn src-btn" data-src="replay">Replay</button>
@@ -31,10 +35,13 @@
 
             <!-- Current session -->
             <div class="session-panel">
-                <h2 class="panel-title">当前会话</h2>
+                <h2 class="panel-title">当前会话 Current Session</h2>
                 <div id="session-detail" class="session-detail">
-                    <span id="session-text">就绪</span>
-                    <span id="session-status" class="session-status-idle">● Idle</span>
+                    <div class="session-info">
+                        <div id="session-text">就绪 Ready</div>
+                        <div id="session-backend" class="session-backend" hidden></div>
+                    </div>
+                    <div id="session-status" class="session-status-idle">● Idle</div>
                 </div>
                 <div class="session-actions">
                     <button id="btn-start" class="btn btn-start">Start</button>
@@ -52,36 +59,33 @@
 
             <!-- Live config -->
             <div id="config-live" class="config-panel" hidden>
-                <div id="config-live-can" hidden>
-                    <h3>SocketCAN 接口</h3>
-                    <div class="live-interface-selector">
-                        <select id="live-interface-select" class="interface-select">
-                            <option value="">-- 选择接口 --</option>
-                        </select>
-                        <button id="btn-refresh-interfaces" class="btn btn-secondary">刷新</button>
-                    </div>
-                    <div id="live-status" class="live-status"></div>
+                <div class="config-row">
+                    <label>Transport:</label>
+                    <select id="transport-select" class="config-select">
+                        <option value="">-- Loading --</option>
+                    </select>
                 </div>
 
-                <div id="config-live-serial" hidden>
-                    <h3>Endpoint</h3>
-                    <div class="endpoint-selector">
-                        <select id="endpoint-select" class="interface-select">
-                            <option value="">-- 选择 Endpoint --</option>
+                <div class="config-row">
+                    <label>Protocol:</label>
+                    <select id="protocol-select" class="config-select">
+                        <option value="">-- Select Transport first --</option>
+                    </select>
+                </div>
+
+                <div class="config-row">
+                    <label>Endpoint:</label>
+                    <div class="endpoint-row">
+                        <select id="endpoint-select" class="config-select">
+                            <option value="">-- Select Protocol first --</option>
                         </select>
-                        <button id="btn-refresh-endpoints" class="btn btn-secondary">刷新</button>
+                        <button id="btn-refresh-endpoint" class="btn btn-secondary btn-small">Refresh</button>
                     </div>
-                    <div class="baudrate-row">
-                        <label for="serial-baudrate">Baudrate:</label>
-                        <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
-                    </div>
-                    <div id="simulator-panel" class="simulator-panel">
-                        <span id="simulator-status" class="status-warning"></span>
-                        <div class="simulator-actions">
-                            <button id="btn-simulator-start" class="btn btn-secondary">Start Simulator</button>
-                            <button id="btn-simulator-stop" class="btn btn-secondary">Stop Simulator</button>
-                        </div>
-                    </div>
+                </div>
+
+                <div id="baudrate-row" class="config-row" hidden>
+                    <label>Baudrate:</label>
+                    <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
                 </div>
 
                 <div id="live-error" class="live-error" hidden></div>

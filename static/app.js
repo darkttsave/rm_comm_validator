@@ -1,14 +1,16 @@
 // RM Communication Validator Web UI JavaScript
-// Unified workflow: 数据源 (Demo / Replay / Live) → 当前会话 → Start / Stop
+// Unified Transport/Protocol/Endpoint workflow
 
 const $ = (id) => document.getElementById(id);
 
-let selectedSource = null;      // 'demo' | 'replay' | 'live'
-let transportType = 'socketcan'; // 'socketcan' | 'serial'
-let endpoints = [];             // unified endpoint list
-let simulator = null;           // simulator status from /api/status
-let session = null;             // session info from /api/status
-let selectedEndpointDevice = null;
+let runtimeMode = 'normal';
+let selectedSource = null;
+let selectedTransport = null;
+let selectedProtocol = null;
+let selectedEndpoint = null;
+let allProtocols = [];
+let endpoints = [];
+let running = false;
 
 document.addEventListener('DOMContentLoaded', () => {
     loadInitial();
@@ -35,70 +37,215 @@ function setupHandlers() {
     $('btn-src-live').addEventListener('click', () => selectSource('live'));
     $('btn-start').addEventListener('click', start);
     $('btn-stop').addEventListener('click', stop);
-    $('btn-simulator-start').addEventListener('click', startSimulator);
-    $('btn-simulator-stop').addEventListener('click', stopSimulator);
-    $('btn-refresh-endpoints').addEventListener('click', loadEndpoints);
-    $('btn-refresh-interfaces').addEventListener('click', loadSocketCANInterfaces);
+    $('transport-select').addEventListener('change', onTransportChange);
+    $('protocol-select').addEventListener('change', onProtocolChange);
+    $('endpoint-select').addEventListener('change', onEndpointChange);
+    $('btn-refresh-endpoint').addEventListener('click', refreshEndpoints);
     $('chk-error-injection').addEventListener('change', toggleErrorInjection);
     $('log-mode-select').addEventListener('change', setLogMode);
-    $('endpoint-select').addEventListener('change', onEndpointChange);
 }
 
 // ---- initialization ----
 
 async function loadInitial() {
     try {
+        // Load runtime mode
+        const rt = await getJSON('/api/runtime');
+        runtimeMode = rt.mode;
+        updateRuntimeBadge();
+
+        // Load protocols
+        const protocolsData = await getJSON('/api/protocols');
+        allProtocols = protocolsData.protocols || [];
+
+        // Get current status
         const st = await getJSON('/api/status');
-        transportType = st.transport_type || 'socketcan';
-        if (st.protocol) {
-            const name = st.protocol.split('/').pop().replace('.yaml', '');
-            $('protocol-name').textContent = `协议: ${name}`;
+
+        // Initialize transport selector
+        const transports = [...new Set(allProtocols.map(p => p.transport))];
+        const transportSelect = $('transport-select');
+        transportSelect.innerHTML = '';
+        for (const t of transports) {
+            const opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t === 'socketcan' ? 'CAN' : t === 'serial' ? 'Serial' : t;
+            transportSelect.appendChild(opt);
         }
+
+        // Set current transport from status
+        if (st.transport_type) {
+            selectedTransport = st.transport_type;
+            transportSelect.value = st.transport_type;
+            await onTransportChange();
+
+            // Set current protocol
+            if (st.protocol_id) {
+                $('protocol-select').value = st.protocol_id;
+                selectedProtocol = st.protocol_id;
+                await onProtocolChange();
+            }
+        }
+
         loadLogFiles();
-        if (transportType === 'serial') {
-            await loadEndpoints();
-        } else {
-            await loadSocketCANInterfaces();
-        }
     } catch (e) {
-        console.error('Failed to load initial status:', e);
+        console.error('Failed to load initial data:', e);
+    }
+}
+
+function updateRuntimeBadge() {
+    const badge = $('runtime-badge');
+    const modeEl = $('runtime-mode');
+    if (runtimeMode === 'simulation') {
+        badge.className = 'runtime-badge runtime-simulation';
+        modeEl.textContent = 'Simulation';
+    } else {
+        badge.className = 'runtime-badge runtime-normal';
+        modeEl.textContent = 'Normal';
     }
 }
 
 // ---- source selection ----
 
 function selectSource(src) {
+    if (running) return;
     selectedSource = src;
     ['demo', 'replay', 'live'].forEach(s => {
         $('btn-src-' + s).classList.toggle('active', s === src);
     });
 
-    // Show the relevant config panel
     $('config-replay').hidden = (src !== 'replay');
     $('config-live').hidden = (src !== 'live');
 
     if (src === 'replay') {
         loadLogFiles();
-    } else if (src === 'live') {
-        if (transportType === 'serial') {
-            $('config-live-serial').hidden = false;
-            $('config-live-can').hidden = true;
-            loadEndpoints();
-        } else {
-            $('config-live-serial').hidden = true;
-            $('config-live-can').hidden = false;
-            loadSocketCANInterfaces();
-        }
     }
-
-    updateSessionPreview();
 }
 
-function updateSessionPreview() {
-    // Only update when idle (running state is driven by status polling).
-    if (session && session.status === 'running') return;
-    const label = selectedSource ? `已选择: ${selectedSource.toUpperCase()}` : '就绪';
-    $('session-text').textContent = label;
+// ---- transport / protocol / endpoint ----
+
+async function onTransportChange() {
+    if (running) return;
+    selectedTransport = $('transport-select').value;
+
+    // Filter protocols by transport
+    const protocols = allProtocols.filter(p => p.transport === selectedTransport);
+    const protocolSelect = $('protocol-select');
+    protocolSelect.innerHTML = '';
+
+    if (protocols.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '-- No protocols available --';
+        opt.disabled = true;
+        protocolSelect.appendChild(opt);
+        selectedProtocol = null;
+        return;
+    }
+
+    for (const p of protocols) {
+        const opt = document.createElement('option');
+        opt.value = p.id;
+        opt.textContent = p.name;
+        protocolSelect.appendChild(opt);
+    }
+
+    // Auto-select first protocol
+    selectedProtocol = protocols[0].id;
+    protocolSelect.value = selectedProtocol;
+    await onProtocolChange();
+}
+
+async function onProtocolChange() {
+    if (running) return;
+    selectedProtocol = $('protocol-select').value;
+
+    if (!selectedProtocol) {
+        $('endpoint-select').innerHTML = '<option value="">-- Select Protocol first --</option>';
+        return;
+    }
+
+    // Load the protocol
+    const result = await postJSON('/api/load_protocol', { protocol_id: selectedProtocol });
+    if (!result.success) {
+        alert('Failed to load protocol: ' + result.error);
+        return;
+    }
+
+    // Update current transport
+    selectedTransport = result.transport;
+
+    // Show/hide baudrate for serial
+    $('baudrate-row').hidden = (selectedTransport !== 'serial');
+
+    // Load endpoints for this transport
+    await refreshEndpoints();
+}
+
+async function refreshEndpoints() {
+    if (!selectedTransport) return;
+
+    const apiUrl = selectedTransport === 'serial' ? '/api/serial_endpoints' : '/api/can_endpoints';
+    const data = await getJSON(apiUrl);
+    endpoints = data.endpoints || [];
+
+    const select = $('endpoint-select');
+    select.innerHTML = '';
+
+    if (endpoints.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '-- No endpoints available --';
+        opt.disabled = true;
+        select.appendChild(opt);
+        return;
+    }
+
+    // Group virtual vs physical
+    const virtualEps = endpoints.filter(e => e.kind === 'virtual');
+    const physicalEps = endpoints.filter(e => e.kind === 'physical');
+
+    if (virtualEps.length > 0) {
+        const og = document.createElement('optgroup');
+        og.label = '模拟设备';
+        for (const e of virtualEps) {
+            const opt = document.createElement('option');
+            const key = e.interface || e.device;
+            opt.value = key;
+            opt.textContent = e.available ? e.label : `${e.label} (不可用)`;
+            opt.disabled = !e.available;
+            opt.dataset.kind = e.kind;
+            opt.dataset.label = e.label;
+            og.appendChild(opt);
+        }
+        select.appendChild(og);
+    }
+
+    if (physicalEps.length > 0) {
+        const og = document.createElement('optgroup');
+        og.label = '物理设备';
+        for (const e of physicalEps) {
+            const opt = document.createElement('option');
+            const key = e.interface || e.device;
+            opt.value = key;
+            opt.textContent = e.label;
+            opt.dataset.kind = e.kind;
+            opt.dataset.label = e.label;
+            og.appendChild(opt);
+        }
+        select.appendChild(og);
+    }
+
+    // Auto-select first available endpoint
+    const firstAvailable = endpoints.find(e => e.available);
+    if (firstAvailable) {
+        const key = firstAvailable.interface || firstAvailable.device;
+        select.value = key;
+        selectedEndpoint = key;
+    }
+}
+
+function onEndpointChange() {
+    selectedEndpoint = $('endpoint-select').value;
 }
 
 // ---- start / stop ----
@@ -129,42 +276,41 @@ async function start() {
 }
 
 async function startLive() {
-    if (transportType === 'serial') {
-        const device = $('endpoint-select').value;
-        if (!device) { alert('请选择一个 Endpoint'); return; }
-        const ep = endpoints.find(e => e.device === device);
-        const kind = ep ? ep.kind : 'physical';
+    if (!selectedTransport || !selectedProtocol || !selectedEndpoint) {
+        alert('请选择 Transport / Protocol / Endpoint');
+        return;
+    }
 
-        if (kind === 'virtual' && !(simulator && simulator.running)) {
-            alert('虚拟串口尚未就绪，请先点击 "Start Simulator"');
-            return;
-        }
+    const select = $('endpoint-select');
+    const selectedOpt = select.options[select.selectedIndex];
+    const kind = selectedOpt ? selectedOpt.dataset.kind : 'physical';
+    const label = selectedOpt ? selectedOpt.dataset.label : selectedEndpoint;
 
+    let result;
+    if (selectedTransport === 'serial') {
         const baudrate = parseInt($('serial-baudrate').value, 10);
         if (!baudrate || baudrate < 300 || baudrate > 115200) {
             alert('请输入有效的波特率 (300-115200)');
             return;
         }
-
-        const r = await postJSON('/api/start_live_serial', {
-            port: device,
+        result = await postJSON('/api/start_live_serial', {
+            port: selectedEndpoint,
             baudrate,
-            label: ep ? ep.label : device
+            label,
+            kind
         });
-        if (!r.success) {
-            showLiveError(r);
-        } else {
-            hideLiveError();
-        }
-        return;
+    } else {
+        result = await postJSON('/api/start_live', {
+            interface: selectedEndpoint,
+            label,
+            kind
+        });
     }
 
-    // SocketCAN
-    const iface = $('live-interface-select').value;
-    if (!iface) { alert('请选择一个 SocketCAN 接口'); return; }
-    const r = await postJSON('/api/start_live', { interface: iface });
-    if (!r.success) {
-        alert('启动 Live 失败: ' + (r.error || '未知错误'));
+    if (!result.success) {
+        showLiveError(result);
+    } else {
+        hideLiveError();
     }
 }
 
@@ -172,8 +318,6 @@ async function stop() {
     await postJSON('/api/stop');
     hideLiveError();
 }
-
-// ---- live error display ----
 
 function showLiveError(r) {
     const box = $('live-error');
@@ -195,149 +339,6 @@ function hideLiveError() {
     $('live-error').innerHTML = '';
 }
 
-// ---- endpoints (serial) ----
-
-async function loadEndpoints() {
-    try {
-        const data = await getJSON('/api/serial_endpoints');
-        endpoints = data.endpoints || [];
-        const virtual = data.virtual || {};
-
-        const select = $('endpoint-select');
-        const prev = selectedEndpointDevice || select.value;
-        select.innerHTML = '';
-
-        // Group virtual vs physical
-        const virtualEps = endpoints.filter(e => e.kind === 'virtual');
-        const physicalEps = endpoints.filter(e => e.kind === 'physical');
-
-        if (virtualEps.length) {
-            const og = document.createElement('optgroup');
-            og.label = '模拟设备';
-            virtualEps.forEach(e => {
-                const opt = document.createElement('option');
-                opt.value = e.device;
-                opt.textContent = e.available ? e.label : `${e.label} (不可用)`;
-                opt.disabled = !e.available;
-                og.appendChild(opt);
-            });
-            select.appendChild(og);
-        }
-
-        if (physicalEps.length) {
-            const og = document.createElement('optgroup');
-            og.label = '物理设备';
-            physicalEps.forEach(e => {
-                const opt = document.createElement('option');
-                opt.value = e.device;
-                opt.textContent = e.label;
-                og.appendChild(opt);
-            });
-            select.appendChild(og);
-        }
-
-        if (!physicalEps.length) {
-            const og = document.createElement('optgroup');
-            og.label = '物理设备';
-            const opt = document.createElement('option');
-            opt.value = '';
-            opt.textContent = '未检测到物理串口';
-            opt.disabled = true;
-            og.appendChild(opt);
-            select.appendChild(og);
-        }
-
-        if (prev && endpoints.some(e => e.device === prev)) {
-            select.value = prev;
-        } else {
-            selectedEndpointDevice = select.value;
-        }
-
-        renderSimulatorControls(virtual);
-    } catch (e) {
-        console.error('Failed to load endpoints:', e);
-    }
-}
-
-function onEndpointChange() {
-    selectedEndpointDevice = $('endpoint-select').value;
-    const ep = endpoints.find(e => e.device === selectedEndpointDevice);
-    // Simulator panel visibility is controlled by transport type, not endpoint kind,
-    // since virtual is always one of the options. Keep always visible for serial.
-}
-
-function renderSimulatorControls(virtual) {
-    simulator = virtual;
-    const statusEl = $('simulator-status');
-
-    if (!virtual.socat_installed) {
-        statusEl.className = 'status-warning';
-        statusEl.textContent = 'Virtual Serial unavailable: socat is not installed. sudo apt install socat';
-        $('btn-simulator-start').disabled = true;
-        $('btn-simulator-stop').disabled = true;
-        return;
-    }
-
-    $('btn-simulator-start').disabled = false;
-    $('btn-simulator-stop').disabled = false;
-
-    if (virtual.running) {
-        statusEl.className = 'status-connected';
-        statusEl.textContent = '● RM Virtual Serial Ready';
-    } else if (virtual.status === 'starting') {
-        statusEl.className = 'status-warning';
-        statusEl.textContent = '● 启动中...';
-    } else if (virtual.status === 'error') {
-        statusEl.className = 'status-error';
-        statusEl.textContent = `✗ ${virtual.error || '模拟器错误'}`;
-    } else {
-        statusEl.className = 'status-warning';
-        statusEl.textContent = '○ 未运行';
-    }
-}
-
-async function startSimulator() {
-    $('simulator-status').className = 'status-warning';
-    $('simulator-status').textContent = '● 启动中...';
-    const r = await postJSON('/api/simulator/start');
-    if (!r.success) {
-        $('simulator-status').className = 'status-error';
-        $('simulator-status').textContent = '✗ ' + (r.error || '启动失败');
-    }
-    await loadEndpoints();
-}
-
-async function stopSimulator() {
-    await postJSON('/api/simulator/stop');
-    await loadEndpoints();
-}
-
-// ---- SocketCAN interfaces ----
-
-async function loadSocketCANInterfaces() {
-    try {
-        const data = await getJSON('/api/socketcan_interfaces');
-        const select = $('live-interface-select');
-        select.innerHTML = '';
-        (data.interfaces || []).forEach(iface => {
-            const opt = document.createElement('option');
-            opt.value = iface;
-            opt.textContent = iface;
-            if (iface === data.default) opt.selected = true;
-            select.appendChild(opt);
-        });
-
-        const status = $('live-status');
-        if (!(data.interfaces || []).length) {
-            status.innerHTML = '<span class="status-warning">⚠ 无可用 SocketCAN 接口</span>';
-        } else {
-            status.innerHTML = '';
-        }
-    } catch (e) {
-        console.error('Failed to load SocketCAN interfaces:', e);
-    }
-}
-
 // ---- periodic status ----
 
 async function updateAll() {
@@ -350,13 +351,12 @@ async function updateAll() {
 async function updateStatus() {
     try {
         const st = await getJSON('/api/status');
-        session = st.session || {};
-        const running = st.running;
+        running = st.running;
 
-        // runtime
-        $('runtime').textContent = formatRuntime(st.runtime);
+        // Runtime
+        $('runtime-display').textContent = formatRuntime(st.runtime);
 
-        // statistics
+        // Statistics
         $('stat-total').textContent = st.statistics.total;
         $('stat-valid').textContent = st.statistics.valid;
         $('stat-invalid').textContent = st.statistics.invalid;
@@ -364,23 +364,21 @@ async function updateStatus() {
 
         renderSession(st);
 
-        // buttons
+        // Lock controls when running
         $('btn-start').disabled = running;
         $('btn-stop').disabled = !running;
         ['demo', 'replay', 'live'].forEach(s => { $('btn-src-' + s).disabled = running; });
+        $('transport-select').disabled = running;
+        $('protocol-select').disabled = running;
+        $('endpoint-select').disabled = running;
+        $('btn-refresh-endpoint').disabled = running;
+        $('serial-baudrate').disabled = running;
         $('log-mode-select').disabled = running;
         $('log-mode-select').value = st.log_mode;
 
-        // error injection checkbox (Demo only, but keep synced)
         $('chk-error-injection').checked = st.error_injection;
 
         updateLogStatus(st);
-
-        // simulator + endpoints (serial transport)
-        if (transportType === 'serial' && st.simulator) {
-            simulator = st.simulator;
-            renderSimulatorControls(st.simulator);
-        }
     } catch (e) {
         console.error('Failed to update status:', e);
     }
@@ -390,29 +388,54 @@ function renderSession(st) {
     const s = st.session || {};
     const textEl = $('session-text');
     const statusEl = $('session-status');
+    const backendEl = $('session-backend');
 
-    if (st.running) {
+    if (running) {
         let text = '';
-        if (s.mode === 'demo') text = 'Demo';
-        else if (s.mode === 'replay') text = 'Replay';
-        else if (s.mode === 'live') {
-            if (transportType === 'serial') {
-                text = `Live / ${s.endpoint_label || s.endpoint || ''} / ${s.baudrate || ''}`;
-            } else {
-                text = `Live / SocketCAN / ${s.interface || ''}`;
-            }
+        if (s.mode === 'demo') {
+            text = 'Demo';
+        } else if (s.mode === 'replay') {
+            text = 'Replay';
+        } else if (s.mode === 'live') {
+            const transport = s.transport === 'socketcan' ? 'CAN' : 'Serial';
+            const protocol = s.protocol || '';
+            const endpoint = s.endpoint_label || s.endpoint || '';
+            const baudrate = s.baudrate ? ` @ ${s.baudrate}` : '';
+            text = `Live / ${transport} / ${protocol} / ${endpoint}${baudrate}`;
         }
         textEl.textContent = text;
         statusEl.textContent = '● Running';
         statusEl.className = 'session-status-running';
+
+        // Show backend status for virtual endpoints
+        if (s.endpoint_kind === 'virtual') {
+            const serialSim = st.serial_simulator || {};
+            const canSim = st.can_simulator || {};
+            let backend = '';
+            if (s.transport === 'serial' && serialSim.running) {
+                backend = '● Mock Gimbal running';
+            } else if (s.transport === 'socketcan' && canSim.running) {
+                backend = '● Mock EC running';
+            }
+            if (backend) {
+                backendEl.textContent = backend;
+                backendEl.hidden = false;
+            } else {
+                backendEl.hidden = true;
+            }
+        } else {
+            backendEl.hidden = true;
+        }
     } else if (s.status === 'error' && s.last_error) {
         textEl.textContent = s.last_error;
         statusEl.textContent = '● Error';
         statusEl.className = 'session-status-error';
+        backendEl.hidden = true;
     } else {
-        textEl.textContent = selectedSource ? `已选择: ${selectedSource.toUpperCase()}` : '就绪';
+        textEl.textContent = selectedSource ? `已选择: ${selectedSource.toUpperCase()}` : '就绪 Ready';
         statusEl.textContent = '● Idle';
         statusEl.className = 'session-status-idle';
+        backendEl.hidden = true;
     }
 }
 

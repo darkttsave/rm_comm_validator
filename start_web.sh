@@ -1,21 +1,29 @@
 #!/usr/bin/env bash
-set -e
+# Normal Runtime launcher
+# Starts Validator Web with physical devices only (no virtual endpoints).
 
-# Locate repository root
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="$ROOT_DIR/.venv/bin/python"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Check if virtual environment exists
-if [ ! -x "$PYTHON" ]; then
-    echo "[ERROR] Virtual environment not found."
-    echo ""
-    echo "Initialize with:"
-    echo "  python3 -m venv .venv"
-    echo "  .venv/bin/python -m pip install -r requirements.txt"
-    echo ""
+echo "=== RM Communication Validator - Normal Runtime ==="
+echo ""
+echo "Starting Validator Web..."
+echo "  - Physical Serial/CAN devices available"
+echo "  - Virtual endpoints disabled"
+echo "  - Demo and Replay available"
+echo ""
+
+# Check venv
+if [ ! -d "$SCRIPT_DIR/.venv" ]; then
+    echo "[Error] Python virtual environment not found."
+    echo "Please run: python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
     exit 1
 fi
 
-# Change to repository root and start web server
-cd "$ROOT_DIR"
-exec "$PYTHON" main.py web "$@"
+# Activate venv
+source "$SCRIPT_DIR/.venv/bin/activate"
+
+# Start Web in Normal Runtime (no --simulation flag)
+python "$SCRIPT_DIR/main.py" web --host 127.0.0.1 --port 5000
+
+echo ""
+echo "Validator stopped."

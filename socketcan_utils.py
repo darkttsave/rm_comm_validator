@@ -62,3 +62,46 @@ def interface_exists(interface: str) -> bool:
         return False
 
     return interface in get_available_socketcan_interfaces()
+
+
+def build_unified_can_endpoints(physical_interfaces, virtual_status):
+    """
+    Merge the Validator-managed virtual CAN endpoint with discovered physical interfaces.
+
+    Args:
+        physical_interfaces: list of interface names from get_available_socketcan_interfaces()
+        virtual_status: dict from CANSimulator.get_status()
+
+    Returns:
+        list of endpoint dicts: {interface, label, kind, available, running}
+    """
+    endpoints = []
+
+    # Managed virtual endpoint always comes first.
+    endpoints.append({
+        'interface': virtual_status['interface'],
+        'label': virtual_status['label'],
+        'kind': 'virtual',
+        'available': virtual_status['vcan_available'] and virtual_status['mock_built'],
+        'running': virtual_status['running'],
+    })
+
+    # Discovered physical endpoints (exclude common non-CAN interfaces).
+    non_can = {'lo', 'eth0', 'eth1', 'wlan0', 'wlan1', 'docker0', 'br-'}
+    for iface in physical_interfaces:
+        # Skip the virtual one if it appears in physical list
+        if iface == virtual_status['interface']:
+            continue
+        # Skip obvious non-CAN interfaces
+        if iface in non_can or any(iface.startswith(prefix) for prefix in ['eth', 'wlan', 'en', 'wl', 'br-', 'docker']):
+            continue
+
+        endpoints.append({
+            'interface': iface,
+            'label': iface,
+            'kind': 'physical',
+            'available': True,
+            'running': False,
+        })
+
+    return endpoints

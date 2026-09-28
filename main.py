@@ -126,8 +126,7 @@ def main():
     web_parser = subparsers.add_parser('web', help='Web UI mode')
     web_parser.add_argument(
         '--protocol',
-        default='protocols/tongji_sentry.yaml',
-        help='Protocol YAML file path (default: protocols/tongji_sentry.yaml)'
+        help='Default protocol ID (optional, can be switched in UI)'
     )
     web_parser.add_argument(
         '--host',
@@ -141,8 +140,9 @@ def main():
         help='Port number (default: 5000)'
     )
     web_parser.add_argument(
-        '--interface',
-        help='Default SocketCAN interface (can be changed in UI)'
+        '--simulation',
+        action='store_true',
+        help='Enable simulation mode (virtual endpoints)'
     )
 
     args = parser.parse_args()
@@ -153,8 +153,9 @@ def main():
     elif args.command == 'web':
         # Import web_app here to avoid loading Flask if not needed
         from web_app import run_web
-        interface = getattr(args, 'interface', None)
-        run_web(args.protocol, args.host, args.port, interface)
+        protocol_id = getattr(args, 'protocol', None)
+        simulation = getattr(args, 'simulation', False)
+        run_web(protocol_id, args.host, args.port, simulation)
         return 0
     else:
         parser.print_help()

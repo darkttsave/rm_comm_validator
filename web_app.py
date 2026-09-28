@@ -1,4 +1,9 @@
-"""Web UI for RM Communication Validator."""
+"""Web UI for RM Communication Validator.
+
+Runtime modes:
+- Normal: ./start_web.sh - only physical devices, no virtual endpoints
+- Simulation: ./start_sim.sh --simulation - enables virtual endpoints
+"""
 
 import atexit
 import os
@@ -15,12 +20,18 @@ from replay_source import ReplaySource
 from live_can_source import LiveCANSource
 from live_serial_source import LiveSerialSource
 from recorder import Recorder
-from socketcan_utils import is_linux, get_available_socketcan_interfaces, interface_exists
+from socketcan_utils import is_linux, get_available_socketcan_interfaces, interface_exists, build_unified_can_endpoints
 from serial_utils import get_available_serial_ports, build_unified_endpoints
 from serial_simulator import SerialSimulator
+from can_simulator import CANSimulator
+from protocol_registry import ProtocolRegistry
 
 
 app = Flask(__name__)
+
+# Runtime mode
+RUNTIME_MODE = 'normal'  # 'normal' or 'simulation'
+
 
 # Global state
 class AppState:
@@ -28,6 +39,8 @@ class AppState:
         self.protocol = None
         self.decoder = None
         self.validator = None
+        self.current_protocol_id = None
+        self.current_transport = None  # 'socketcan' or 'serial'
 
         self.mode = None  # 'demo', 'replay', 'live'
         self.source = None
@@ -45,6 +58,7 @@ class AppState:
         # Session state (unified workflow)
         self.session_status = 'idle'  # idle | connecting | running | error
         self.endpoint_label = None  # display label of current endpoint
+        self.endpoint_kind = None  # 'virtual' or 'physical'
         self.serial_baudrate = None  # current serial baudrate
 
         # Logging
@@ -70,24 +84,25 @@ class AppState:
 
         self.start_time = None
 
+
 state = AppState()
 
-# Global configuration
-config = {
-    'default_interface': None,  # Set from CLI or YAML
-    'available_interfaces': []
-}
+# Protocol registry
+protocol_registry = ProtocolRegistry(Path(__file__).parent / 'protocols')
 
-# Virtual serial simulator (socat PTY bridge + mock gimbal node), owned by
-# this web process. It is the only code path allowed to spawn/stop it.
-simulator = SerialSimulator(Path(__file__).parent)
+# Virtual simulators (owned by this web process)
+serial_simulator = SerialSimulator(Path(__file__).parent)
+can_simulator = CANSimulator(Path(__file__).parent)
 
 
 def _cleanup_on_exit():
-    simulator.cleanup()
+    """Cleanup simulators on exit."""
+    serial_simulator.cleanup()
+    can_simulator.cleanup()
 
 
 atexit.register(_cleanup_on_exit)
+
 
 # Friendly context for serial open failures.
 SERIAL_ERROR_CAUSES = [
@@ -109,11 +124,24 @@ def friendly_serial_error(port, exc):
     }
 
 
-def load_protocol(protocol_path):
+def load_protocol(protocol_id_or_path):
     """Load protocol and initialize components."""
-    state.protocol = Protocol(protocol_path)
+    # If it's a protocol ID from registry, resolve to path
+    if '/' not in protocol_id_or_path and '\\' not in protocol_id_or_path:
+        path = protocol_registry.get_path(protocol_id_or_path)
+        if path is None:
+            raise ValueError(f"Unknown protocol ID: {protocol_id_or_path}")
+        protocol_id = protocol_id_or_path
+    else:
+        # Legacy: direct path
+        path = protocol_id_or_path
+        protocol_id = Path(path).stem
+
+    state.protocol = Protocol(path)
     state.decoder = Decoder(state.protocol)
     state.validator = Validator(state.protocol)
+    state.current_protocol_id = protocol_id
+    state.current_transport = state.protocol.transport.type
 
 
 def handle_frame(can_id, raw_data, timestamp):
@@ -272,6 +300,7 @@ def start_demo():
 
     state.mode = 'demo'
     state.endpoint_label = 'Demo'
+    state.endpoint_kind = None
     state.interface = None
     state.serial_port = None
     state.serial_baudrate = None
@@ -304,6 +333,7 @@ def start_replay(jsonl_path):
     try:
         state.mode = 'replay'
         state.endpoint_label = 'Replay'
+        state.endpoint_kind = None
         state.interface = None
         state.serial_port = None
         state.serial_baudrate = None
@@ -329,7 +359,7 @@ def start_replay(jsonl_path):
         return str(e)
 
 
-def start_live(interface):
+def start_live(interface, label=None, kind='physical'):
     """Start live SocketCAN mode."""
     if state.running:
         return {'success': False, 'error': 'Another source is already running'}
@@ -337,6 +367,15 @@ def start_live(interface):
     # Check platform
     if not is_linux():
         return {'success': False, 'error': 'Live SocketCAN mode requires Linux'}
+
+    # Virtual endpoint requires a running simulator
+    if kind == 'virtual' and interface == can_simulator.INTERFACE:
+        if not can_simulator.get_status()['running']:
+            # Auto-start the simulator
+            print(f"[Auto-start] Starting CAN simulator for {interface}...")
+            result = can_simulator.start()
+            if not result['success']:
+                return result
 
     # Check interface exists
     if not interface_exists(interface):
@@ -349,7 +388,8 @@ def start_live(interface):
     try:
         state.mode = 'live'
         state.interface = interface
-        state.endpoint_label = interface
+        state.endpoint_label = label or interface
+        state.endpoint_kind = kind
         state.serial_port = None
         state.serial_baudrate = None
         state.source = LiveCANSource(interface)
@@ -381,14 +421,19 @@ def start_live(interface):
         return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
 
 
-def start_live_serial(port, baudrate, label=None):
+def start_live_serial(port, baudrate, label=None, kind='physical'):
     """Start live Serial mode."""
     if state.running:
         return {'success': False, 'error': 'Another source is already running'}
 
-    # Virtual endpoint requires a running simulator (the PTY bridge).
-    if port == simulator.VALIDATOR_DEVICE and not simulator.get_status()['running']:
-        return {'success': False, 'error': '虚拟串口尚未就绪，请先启动模拟器 (RM Virtual Serial)'}
+    # Virtual endpoint requires a running simulator
+    if kind == 'virtual' and port == serial_simulator.VALIDATOR_DEVICE:
+        if not serial_simulator.get_status()['running']:
+            # Auto-start the simulator
+            print(f"[Auto-start] Starting Serial simulator for {port}...")
+            result = serial_simulator.start()
+            if not result['success']:
+                return result
 
     state.session_status = 'connecting'
     state.connection_status = 'connecting'
@@ -419,6 +464,7 @@ def start_live_serial(port, baudrate, label=None):
         state.serial_port = port
         state.serial_baudrate = baudrate
         state.endpoint_label = label or port
+        state.endpoint_kind = kind
         state.interface = None
         state.source = LiveSerialSource(
             port=port,
@@ -497,6 +543,10 @@ def stop_recorder_if_active():
 
 def stop_source():
     """Stop current source."""
+    endpoint_was_virtual = state.endpoint_kind == 'virtual'
+    transport_was_serial = state.current_transport == 'serial'
+    transport_was_can = state.current_transport == 'socketcan'
+
     if state.source and state.running:
         state.running = False
         if hasattr(state.source, 'stop'):
@@ -507,10 +557,20 @@ def stop_source():
     # Stop recorder
     stop_recorder_if_active()
 
+    # Auto-stop virtual simulator if it was a virtual endpoint
+    if endpoint_was_virtual:
+        if transport_was_serial:
+            print("[Auto-stop] Stopping Serial simulator...")
+            serial_simulator.stop()
+        elif transport_was_can:
+            print("[Auto-stop] Stopping CAN simulator...")
+            can_simulator.stop()
+
     state.mode = None
     state.interface = None
     state.serial_port = None
     state.endpoint_label = None
+    state.endpoint_kind = None
     state.serial_baudrate = None
     state.connection_status = 'disconnected'
     state.session_status = 'idle'
@@ -542,10 +602,23 @@ def calculate_rate(can_id):
     return len(times) / elapsed
 
 
+# ============================================================================
+# Flask Routes
+# ============================================================================
+
 @app.route('/')
 def index():
     """Main page."""
     return render_template('index.html')
+
+
+@app.route('/api/runtime')
+def api_runtime():
+    """Get runtime mode."""
+    return jsonify({
+        'mode': RUNTIME_MODE,
+        'simulation_enabled': RUNTIME_MODE == 'simulation'
+    })
 
 
 @app.route('/api/status')
@@ -557,7 +630,8 @@ def api_status():
 
     return jsonify({
         'protocol': state.protocol.filepath if state.protocol else None,
-        'transport_type': state.protocol.transport.type if state.protocol else None,
+        'protocol_id': state.current_protocol_id,
+        'transport_type': state.current_transport,
         'mode': state.mode,
         'running': state.running,
         'error_injection': state.error_injection,
@@ -573,14 +647,18 @@ def api_status():
         'session': {
             'status': state.session_status,
             'mode': state.mode,
+            'transport': state.current_transport,
+            'protocol': state.current_protocol_id,
             'endpoint': state.serial_port or state.interface,
             'endpoint_label': state.endpoint_label,
+            'endpoint_kind': state.endpoint_kind,
             'baudrate': state.serial_baudrate,
             'interface': state.interface,
             'connection_status': state.connection_status,
             'last_error': state.last_error,
         },
-        'simulator': simulator.get_status(),
+        'serial_simulator': serial_simulator.get_status(),
+        'can_simulator': can_simulator.get_status(),
         'statistics': {
             'total': state.total_frames,
             'valid': state.valid_frames,
@@ -588,6 +666,45 @@ def api_status():
             'unknown': state.unknown_frames
         }
     })
+
+
+@app.route('/api/protocols')
+def api_protocols():
+    """Get available protocols."""
+    return jsonify({
+        'protocols': protocol_registry.get_all()
+    })
+
+
+@app.route('/api/protocols/<transport>')
+def api_protocols_by_transport(transport):
+    """Get protocols filtered by transport type."""
+    return jsonify({
+        'protocols': protocol_registry.get_by_transport(transport)
+    })
+
+
+@app.route('/api/load_protocol', methods=['POST'])
+def api_load_protocol():
+    """Load a new protocol (only when idle)."""
+    if state.running:
+        return jsonify({'success': False, 'error': 'Cannot change protocol while running'})
+
+    data = request.json
+    protocol_id = data.get('protocol_id')
+
+    if not protocol_id:
+        return jsonify({'success': False, 'error': 'No protocol_id provided'})
+
+    try:
+        load_protocol(protocol_id)
+        return jsonify({
+            'success': True,
+            'protocol_id': state.current_protocol_id,
+            'transport': state.current_transport
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
 
 
 @app.route('/api/messages')
@@ -703,30 +820,44 @@ def api_start_live():
     """Start live SocketCAN mode."""
     data = request.json
     interface = data.get('interface')
+    label = data.get('label')
+    kind = data.get('kind', 'physical')
 
     if not interface:
         return jsonify({'success': False, 'error': 'No interface provided'})
 
-    result = start_live(interface)
+    result = start_live(interface, label=label, kind=kind)
     return jsonify(result)
 
 
-@app.route('/api/socketcan_interfaces')
-def api_socketcan_interfaces():
-    """Get available SocketCAN interfaces."""
+@app.route('/api/can_endpoints')
+def api_can_endpoints():
+    """Get unified CAN endpoints (managed virtual + discovered physical)."""
+    virtual_status = can_simulator.get_status()
+    physical = get_available_socketcan_interfaces()
+    endpoints = build_unified_can_endpoints(physical, virtual_status)
+
+    # Filter out virtual endpoint in Normal Runtime
+    if RUNTIME_MODE == 'normal':
+        endpoints = [e for e in endpoints if e['kind'] != 'virtual']
+
     return jsonify({
-        'platform': 'linux' if is_linux() else 'other',
-        'interfaces': config['available_interfaces'],
-        'default': config['default_interface']
+        'endpoints': endpoints,
+        'virtual': virtual_status,
     })
 
 
 @app.route('/api/serial_endpoints')
 def api_serial_endpoints():
     """Get unified serial endpoints (managed virtual + discovered physical)."""
-    virtual_status = simulator.get_status()
+    virtual_status = serial_simulator.get_status()
     physical = get_available_serial_ports()
     endpoints = build_unified_endpoints(physical, virtual_status)
+
+    # Filter out virtual endpoint in Normal Runtime
+    if RUNTIME_MODE == 'normal':
+        endpoints = [e for e in endpoints if e['kind'] != 'virtual']
+
     return jsonify({
         'endpoints': endpoints,
         'virtual': virtual_status,
@@ -740,30 +871,13 @@ def api_start_live_serial():
     port = data.get('port')
     baudrate = data.get('baudrate', 9600)
     label = data.get('label')
+    kind = data.get('kind', 'physical')
 
     if not port:
         return jsonify({'success': False, 'error': 'No port provided'})
 
-    result = start_live_serial(port, baudrate, label=label)
+    result = start_live_serial(port, baudrate, label=label, kind=kind)
     return jsonify(result)
-
-
-@app.route('/api/simulator/start', methods=['POST'])
-def api_simulator_start():
-    """Start the virtual serial simulator (socat bridge + mock node)."""
-    return jsonify(simulator.start())
-
-
-@app.route('/api/simulator/stop', methods=['POST'])
-def api_simulator_stop():
-    """Stop the virtual serial simulator."""
-    return jsonify(simulator.stop())
-
-
-@app.route('/api/simulator/status')
-def api_simulator_status():
-    """Get virtual serial simulator status."""
-    return jsonify(simulator.get_status())
 
 
 @app.route('/api/set_log_mode', methods=['POST'])
@@ -782,50 +896,38 @@ def api_set_log_mode():
     return jsonify({'success': True, 'mode': mode})
 
 
-def run_web(protocol_path, host='127.0.0.1', port=5000, interface=None):
+def run_web(protocol_id=None, host='127.0.0.1', port=5000, simulation=False):
     """Run web server."""
-    # Load protocol
-    load_protocol(protocol_path)
+    global RUNTIME_MODE
+    RUNTIME_MODE = 'simulation' if simulation else 'normal'
 
-    # Detect available SocketCAN interfaces
-    config['available_interfaces'] = get_available_socketcan_interfaces()
-
-    # Determine default interface
-    if interface:
-        # CLI argument takes precedence
-        config['default_interface'] = interface
-    elif state.protocol and state.protocol.messages:
-        # Try to get from protocol YAML
-        try:
-            yaml_interface = state.protocol.config.get('transport', {}).get('interface', 'can0')
-            config['default_interface'] = yaml_interface
-        except:
-            config['default_interface'] = 'can0'
+    # Load a default protocol if provided, otherwise the first available
+    if protocol_id:
+        load_protocol(protocol_id)
     else:
-        config['default_interface'] = 'can0'
+        protocols = protocol_registry.get_all()
+        if protocols:
+            load_protocol(protocols[0]['id'])
+        else:
+            print("Warning: No protocols found in protocols/ directory")
 
     # Print startup banner
     print(f"\n=== RM Communication Validator Web UI ===")
-    print(f"Protocol: {protocol_path}")
-    print(f"Default interface: {config['default_interface']}")
-
-    if is_linux():
-        if config['available_interfaces']:
-            print(f"Available SocketCAN interfaces: {', '.join(config['available_interfaces'])}")
-        else:
-            print("Available SocketCAN interfaces: none")
-            print("Live mode unavailable until a CAN/vCAN interface is created.")
-    else:
-        print("Platform: Non-Linux (Live mode unavailable)")
-
+    print(f"Runtime mode: {RUNTIME_MODE.upper()}")
+    if state.protocol:
+        print(f"Default protocol: {state.current_protocol_id} ({state.current_transport})")
     print(f"Server: http://{host}:{port}")
-    print(f"\nLive interface can also be selected from the Web UI.")
-    print("Press Ctrl+C to stop.\n")
+    print(f"\nAll protocols can be switched from the Web UI.")
+    if RUNTIME_MODE == 'simulation':
+        print(f"Virtual endpoints enabled (RM Virtual CAN / RM Virtual Serial)")
+    else:
+        print(f"Normal runtime (physical devices only)")
+    print(f"\nPress Ctrl+C to stop.\n")
 
     app.run(host=host, port=port, debug=False, threaded=True)
 
 
 if __name__ == '__main__':
     import sys
-    protocol_path = sys.argv[1] if len(sys.argv) > 1 else 'protocols/tongji_sentry.yaml'
-    run_web(protocol_path)
+    protocol_id = sys.argv[1] if len(sys.argv) > 1 else None
+    run_web(protocol_id)
