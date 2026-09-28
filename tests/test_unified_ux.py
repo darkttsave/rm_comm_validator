@@ -376,6 +376,12 @@ def test_virtual_can_auto_start(monkeypatch):
     """Test that selecting Virtual CAN auto-starts the simulator."""
     import web_app
 
+    # Reset Flask global state to prevent test pollution
+    web_app.state.running = False
+    web_app.state.live_source = None
+    web_app.state.current_transport = None
+    web_app.state.endpoint_kind = None
+
     monkeypatch.setattr(web_app, 'RUNTIME_MODE', 'simulation')
     monkeypatch.setattr(web_app, 'is_linux', lambda: True)
     monkeypatch.setattr(web_app, 'interface_exists', lambda iface: True)
