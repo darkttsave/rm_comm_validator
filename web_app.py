@@ -359,8 +359,15 @@ def start_replay(jsonl_path):
         return str(e)
 
 
-def start_live(interface, label=None, kind='physical'):
-    """Start live SocketCAN mode."""
+def start_live(interface, label=None, kind='physical', error_mode='normal'):
+    """Start live SocketCAN mode.
+
+    Args:
+        interface: CAN interface name (e.g., 'vcan0', 'can0')
+        label: Human-readable label for the endpoint
+        kind: 'physical' or 'virtual'
+        error_mode: Error injection mode for virtual endpoints (normal/invalid_enum/invalid_quaternion/unknown_id)
+    """
     if state.running:
         return {'success': False, 'error': 'Another source is already running'}
 
@@ -371,9 +378,9 @@ def start_live(interface, label=None, kind='physical'):
     # Virtual endpoint requires a running simulator
     if kind == 'virtual' and interface == can_simulator.INTERFACE:
         if not can_simulator.get_status()['running']:
-            # Auto-start the simulator
-            print(f"[Auto-start] Starting CAN simulator for {interface}...")
-            result = can_simulator.start()
+            # Auto-start the simulator with error injection mode
+            print(f"[Auto-start] Starting CAN simulator with mode={error_mode}...")
+            result = can_simulator.start(mode=error_mode)
             if not result['success']:
                 return result
 
@@ -413,6 +420,11 @@ def start_live(interface, label=None, kind='physical'):
         return {'success': True}
 
     except Exception as e:
+        # Rollback: stop simulator if we just started it
+        if kind == 'virtual' and interface == can_simulator.INTERFACE:
+            print(f"[Rollback] Live connection failed, stopping CAN simulator...")
+            can_simulator.stop()
+
         state.connection_status = 'error'
         state.session_status = 'error'
         state.last_error = str(e)
@@ -496,6 +508,11 @@ def start_live_serial(port, baudrate, label=None, kind='physical', error_mode='n
         return {'success': True}
 
     except Exception as e:
+        # Rollback: stop simulator if we just started it
+        if kind == 'virtual' and port == serial_simulator.VALIDATOR_DEVICE:
+            print(f"[Rollback] Live connection failed, stopping Serial simulator...")
+            serial_simulator.stop()
+
         state.connection_status = 'error'
         state.session_status = 'error'
         state.last_error = f'无法打开 {port}'
@@ -822,11 +839,12 @@ def api_start_live():
     interface = data.get('interface')
     label = data.get('label')
     kind = data.get('kind', 'physical')
+    error_mode = data.get('error_mode', 'normal')
 
     if not interface:
         return jsonify({'success': False, 'error': 'No interface provided'})
 
-    result = start_live(interface, label=label, kind=kind)
+    result = start_live(interface, label=label, kind=kind, error_mode=error_mode)
     return jsonify(result)
 
 
