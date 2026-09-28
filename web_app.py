@@ -421,7 +421,7 @@ def start_live(interface, label=None, kind='physical'):
         return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
 
 
-def start_live_serial(port, baudrate, label=None, kind='physical'):
+def start_live_serial(port, baudrate, label=None, kind='physical', error_mode='normal'):
     """Start live Serial mode."""
     if state.running:
         return {'success': False, 'error': 'Another source is already running'}
@@ -429,9 +429,9 @@ def start_live_serial(port, baudrate, label=None, kind='physical'):
     # Virtual endpoint requires a running simulator
     if kind == 'virtual' and port == serial_simulator.VALIDATOR_DEVICE:
         if not serial_simulator.get_status()['running']:
-            # Auto-start the simulator
-            print(f"[Auto-start] Starting Serial simulator for {port}...")
-            result = serial_simulator.start()
+            # Auto-start the simulator with specified error mode
+            print(f"[Auto-start] Starting Serial simulator for {port} with mode={error_mode}...")
+            result = serial_simulator.start(mode=error_mode)
             if not result['success']:
                 return result
 
@@ -872,11 +872,12 @@ def api_start_live_serial():
     baudrate = data.get('baudrate', 9600)
     label = data.get('label')
     kind = data.get('kind', 'physical')
+    error_mode = data.get('error_mode', 'normal')
 
     if not port:
         return jsonify({'success': False, 'error': 'No port provided'})
 
-    result = start_live_serial(port, baudrate, label=label, kind=kind)
+    result = start_live_serial(port, baudrate, label=label, kind=kind, error_mode=error_mode)
     return jsonify(result)
 
 

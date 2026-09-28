@@ -32,7 +32,6 @@ async function postJSON(url, body) {
 }
 
 function setupHandlers() {
-    $('btn-src-demo').addEventListener('click', () => selectSource('demo'));
     $('btn-src-replay').addEventListener('click', () => selectSource('replay'));
     $('btn-src-live').addEventListener('click', () => selectSource('live'));
     $('btn-start').addEventListener('click', start);
@@ -41,7 +40,6 @@ function setupHandlers() {
     $('protocol-select').addEventListener('change', onProtocolChange);
     $('endpoint-select').addEventListener('change', onEndpointChange);
     $('btn-refresh-endpoint').addEventListener('click', refreshEndpoints);
-    $('chk-error-injection').addEventListener('change', toggleErrorInjection);
     $('log-mode-select').addEventListener('change', setLogMode);
 }
 
@@ -109,7 +107,7 @@ function updateRuntimeBadge() {
 function selectSource(src) {
     if (running) return;
     selectedSource = src;
-    ['demo', 'replay', 'live'].forEach(s => {
+    ['replay', 'live'].forEach(s => {
         $('btn-src-' + s).classList.toggle('active', s === src);
     });
 
@@ -179,6 +177,9 @@ async function onProtocolChange() {
 
     // Load endpoints for this transport
     await refreshEndpoints();
+
+    // Update error injection visibility
+    updateErrorInjectionVisibility();
 }
 
 async function refreshEndpoints() {
@@ -242,23 +243,29 @@ async function refreshEndpoints() {
         select.value = key;
         selectedEndpoint = key;
     }
+
+    updateErrorInjectionVisibility();
 }
 
 function onEndpointChange() {
     selectedEndpoint = $('endpoint-select').value;
+    updateErrorInjectionVisibility();
+}
+
+function updateErrorInjectionVisibility() {
+    // Show error injection mode selector only for Virtual Serial endpoint
+    const select = $('endpoint-select');
+    const selectedOpt = select.options[select.selectedIndex];
+    const kind = selectedOpt ? selectedOpt.dataset.kind : null;
+    const isVirtualSerial = (selectedTransport === 'serial' && kind === 'virtual');
+    $('error-injection-row').hidden = !isVirtualSerial;
 }
 
 // ---- start / stop ----
 
 async function start() {
     if (!selectedSource) {
-        alert('请先选择数据源 (Demo / Replay / Live)');
-        return;
-    }
-
-    if (selectedSource === 'demo') {
-        const r = await postJSON('/api/start_demo');
-        if (!r.success) alert('启动 Demo 失败');
+        alert('请先选择数据源 (Replay / Live)');
         return;
     }
 
@@ -293,11 +300,16 @@ async function startLive() {
             alert('请输入有效的波特率 (300-115200)');
             return;
         }
+
+        // Get error injection mode for virtual serial
+        const errorMode = (kind === 'virtual') ? $('error-mode-select').value : 'normal';
+
         result = await postJSON('/api/start_live_serial', {
             port: selectedEndpoint,
             baudrate,
             label,
-            kind
+            kind,
+            error_mode: errorMode
         });
     } else {
         result = await postJSON('/api/start_live', {
@@ -367,16 +379,15 @@ async function updateStatus() {
         // Lock controls when running
         $('btn-start').disabled = running;
         $('btn-stop').disabled = !running;
-        ['demo', 'replay', 'live'].forEach(s => { $('btn-src-' + s).disabled = running; });
+        ['replay', 'live'].forEach(s => { $('btn-src-' + s).disabled = running; });
         $('transport-select').disabled = running;
         $('protocol-select').disabled = running;
         $('endpoint-select').disabled = running;
         $('btn-refresh-endpoint').disabled = running;
         $('serial-baudrate').disabled = running;
+        $('error-mode-select').disabled = running;
         $('log-mode-select').disabled = running;
         $('log-mode-select').value = st.log_mode;
-
-        $('chk-error-injection').checked = st.error_injection;
 
         updateLogStatus(st);
     } catch (e) {
@@ -392,9 +403,7 @@ function renderSession(st) {
 
     if (running) {
         let text = '';
-        if (s.mode === 'demo') {
-            text = 'Demo';
-        } else if (s.mode === 'replay') {
+        if (s.mode === 'replay') {
             text = 'Replay';
         } else if (s.mode === 'live') {
             const transport = s.transport === 'socketcan' ? 'CAN' : 'Serial';
@@ -560,10 +569,6 @@ async function loadLogFiles() {
 }
 
 // ---- misc controls ----
-
-async function toggleErrorInjection() {
-    await postJSON('/api/toggle_error_injection');
-}
 
 async function setLogMode() {
     const mode = $('log-mode-select').value;

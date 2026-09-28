@@ -36,6 +36,9 @@ class SerialSimulator:
     ALIAS_WAIT_TIMEOUT = 5.0
     MOCK_START_GRACE = 0.3
 
+    # Whitelist of allowed error injection modes (matches mock_gimbal.py)
+    VALID_MODES = ['normal', 'invalid_mode', 'invalid_quaternion', 'bad_crc']
+
     def __init__(self, repo_root=None):
         if repo_root is None:
             repo_root = Path(__file__).parent
@@ -46,6 +49,7 @@ class SerialSimulator:
         self._mock_log = None
         self.status = self.STATUS_IDLE
         self.error = None
+        self.current_mode = 'normal'
         self._lock = threading.Lock()
 
     # ---- helpers ---------------------------------------------------------
@@ -110,9 +114,15 @@ class SerialSimulator:
 
     # ---- public lifecycle -------------------------------------------------
 
-    def start(self):
+    def start(self, mode='normal'):
+        """
+        Start the serial simulator with specified error injection mode.
+
+        Args:
+            mode: Error injection mode ('normal', 'invalid_mode', 'invalid_quaternion', 'bad_crc')
+        """
         with self._lock:
-            return self._start_locked()
+            return self._start_locked(mode)
 
     def stop(self):
         with self._lock:
@@ -122,7 +132,13 @@ class SerialSimulator:
         """Idempotent shutdown for process exit (atexit)."""
         self.stop()
 
-    def _start_locked(self):
+    def _start_locked(self, mode='normal'):
+        # Validate mode against whitelist
+        if mode not in self.VALID_MODES:
+            self.status = self.STATUS_ERROR
+            self.error = f'Invalid error injection mode: {mode}. Valid modes: {", ".join(self.VALID_MODES)}'
+            return {'success': False, 'error': self.error}
+
         if not self.socat_installed:
             self.status = self.STATUS_ERROR
             self.error = 'socat is not installed. Run: sudo apt install socat'
@@ -135,6 +151,7 @@ class SerialSimulator:
         self._cleanup_processes()
         self.status = self.STATUS_STARTING
         self.error = None
+        self.current_mode = mode
 
         # 1) Start the socat PTY bridge.
         try:
@@ -168,12 +185,12 @@ class SerialSimulator:
             self._cleanup_processes()
             return {'success': False, 'error': self.error}
 
-        # 3) Start the mock gimbal node.
+        # 3) Start the mock gimbal node with specified error mode.
         try:
             self._mock_log = self._open_log('simulator_mock.log')
             self.mock_proc = subprocess.Popen(
                 [sys.executable, str(self._mock_script()),
-                 self.MOCK_DEVICE, '--mode', 'normal', '--rate', '10'],
+                 self.MOCK_DEVICE, '--mode', mode, '--rate', '10'],
                 stdout=self._mock_log,
                 stderr=self._mock_log,
             )

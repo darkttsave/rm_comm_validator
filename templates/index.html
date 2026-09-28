@@ -23,11 +23,10 @@
 
         <!-- Control Panel -->
         <section class="control-panel">
-            <!-- Data source selection -->
+            <!-- Data source selection (Demo removed) -->
             <div class="source-panel">
                 <h2 class="panel-title">数据源 Data Source</h2>
                 <div class="source-buttons">
-                    <button id="btn-src-demo" class="btn src-btn" data-src="demo">Demo</button>
                     <button id="btn-src-replay" class="btn src-btn" data-src="replay">Replay</button>
                     <button id="btn-src-live" class="btn src-btn" data-src="live">Live</button>
                 </div>
@@ -88,25 +87,40 @@
                     <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
                 </div>
 
+                <!-- Virtual Serial Error Injection -->
+                <div id="error-injection-row" class="config-row" hidden>
+                    <label>虚拟串口错误注入:</label>
+                    <select id="error-mode-select" class="config-select">
+                        <option value="normal">正常</option>
+                        <option value="invalid_mode">非法 Mode</option>
+                        <option value="invalid_quaternion">四元数异常</option>
+                        <option value="bad_crc">CRC 错误</option>
+                    </select>
+                </div>
+
                 <div id="live-error" class="live-error" hidden></div>
             </div>
 
-            <!-- Options -->
+            <!-- Options (removed Demo error injection) -->
             <div class="options-row">
-                <label class="error-injection">
-                    <input type="checkbox" id="chk-error-injection">
-                    Demo 错误注入
-                </label>
                 <label class="log-mode-selector">
-                    日志记录:
+                    日志保存:
                     <select id="log-mode-select" class="log-mode-select">
-                        <option value="none">不记录</option>
+                        <option value="none">不保存</option>
                         <option value="errors" selected>仅异常</option>
-                        <option value="all">全部</option>
+                        <option value="all">保存全部</option>
                     </select>
                 </label>
             </div>
             <div id="log-status" class="log-status"></div>
+        </section>
+
+        <!-- Recent Events (elevated importance) -->
+        <section class="events-prominent">
+            <h2>近期事件 Recent Events</h2>
+            <div id="events-container" class="events-list-prominent">
+                <p class="no-data">无事件</p>
+            </div>
         </section>
 
         <!-- Statistics -->
@@ -135,18 +149,10 @@
             </div>
         </section>
 
-        <!-- Messages -->
+        <!-- Messages (compact layout) -->
         <section class="messages">
             <div id="messages-container">
                 <p class="no-data">等待数据...</p>
-            </div>
-        </section>
-
-        <!-- Recent Events -->
-        <section class="events">
-            <h2>近期事件</h2>
-            <div id="events-container" class="events-list">
-                <p class="no-data">无事件</p>
             </div>
         </section>
     </div>

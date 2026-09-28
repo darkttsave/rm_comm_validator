@@ -16,20 +16,27 @@
 
 ---
 
-## 四个核心概念 Core Concepts
+## 核心概念 Core Concepts
 
-### 1. Demo（演示模式）
-程序内部生成模拟数据，用于演示 Validator 的功能。
-
-### 2. Replay（回放模式）
+### 1. Replay（回放模式）
 从之前保存的日志文件（`.jsonl`）中回放数据，用于调试和分析历史问题。
 
-### 3. Live（实时模式）
+### 2. Live（实时模式）
 从真实的通信接口（CAN / Serial）读取实时数据并验证。
 
-### 4. Simulator（模拟器）
+### 3. Simulator（模拟器）
 模拟一个下位机/云台节点，为 Live 模式提供测试数据。  
 当你选择 **RM Virtual Serial** 或 **RM Virtual CAN** 并点击 Start 时，Simulator 会自动启动。
+
+### 4. 虚拟串口错误注入（Virtual Serial Error Injection）
+在使用 **RM Virtual Serial** 时，可以选择错误注入模式来测试 Validator 的验证能力：
+
+- **正常** - 发送完全正确的数据帧
+- **非法 Mode** - 发送不合法的 mode 字段值
+- **四元数异常** - 发送不满足归一化条件的四元数
+- **CRC 错误** - 发送 CRC16 校验错误的数据帧
+
+错误注入仅在选择 Virtual Serial Endpoint 时可用，用于测试协议验证器的正确性。
 
 ---
 
@@ -49,7 +56,6 @@
 **用于场景**：
 - 真实 Serial 设备（如实际云台）
 - 真实 CAN 总线
-- Demo 演示数据
 - Replay 历史日志
 
 **注意**：Normal Runtime 中 **不会显示** RM Virtual Serial / RM Virtual CAN 选项。

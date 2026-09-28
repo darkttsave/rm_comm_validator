@@ -189,86 +189,89 @@ def test_alias_timeout_fails_gracefully(monkeypatch, tmp_path):
 
 
 # --------------------------------------------------------------------------
-# Flask API endpoints (mock simulator / physical ports)
+# Flask API endpoints removed - simulator auto-starts with virtual endpoints
+# The unified UX implementation auto-starts/stops simulators when selecting
+# virtual endpoints, so explicit /api/simulator/* endpoints are obsolete.
 # --------------------------------------------------------------------------
 
-def test_serial_endpoints_api(monkeypatch):
-    import web_app
 
-    monkeypatch.setattr(web_app, 'get_available_serial_ports', lambda: [
-        {'device': '/dev/ttyUSB0', 'description': 'CH340', 'hwid': ''},
-    ])
+# --------------------------------------------------------------------------
+# Error injection modes
+# --------------------------------------------------------------------------
 
-    class FakeSimulator:
-        def get_status(self):
-            return {
-                'status': 'idle', 'running': False,
-                'socat_installed': True, 'error': None,
-                'device': '/tmp/rmcv_validator', 'label': 'RM Virtual Serial',
-            }
+def test_error_injection_mode_normal(monkeypatch, tmp_path):
+    sim = SerialSimulator(repo_root=tmp_path)
+    procs = []
+    _install(monkeypatch, sim, procs)
 
-    monkeypatch.setattr(web_app, 'simulator', FakeSimulator())
+    result = sim.start(mode='normal')
 
-    client = web_app.app.test_client()
-    data = client.get('/api/serial_endpoints').get_json()
-
-    assert len(data['endpoints']) == 2
-    assert data['endpoints'][0]['kind'] == 'virtual'
-    assert data['endpoints'][1]['kind'] == 'physical'
-    assert data['virtual']['socat_installed'] is True
+    assert result['success'] is True
+    assert sim.current_mode == 'normal'
+    assert '--mode' in procs[1].args
+    assert 'normal' in procs[1].args
 
 
-def test_simulator_api_lifecycle(monkeypatch):
-    import web_app
+def test_error_injection_mode_invalid_mode(monkeypatch, tmp_path):
+    sim = SerialSimulator(repo_root=tmp_path)
+    procs = []
+    _install(monkeypatch, sim, procs)
 
-    state = {'running': False}
+    result = sim.start(mode='invalid_mode')
 
-    class FakeSimulator:
-        def start(self):
-            state['running'] = True
-            return {'success': True, 'status': 'running'}
-
-        def stop(self):
-            state['running'] = False
-            return {'success': True, 'status': 'stopped'}
-
-        def get_status(self):
-            return {'status': 'running' if state['running'] else 'stopped',
-                    'running': state['running']}
-
-    monkeypatch.setattr(web_app, 'simulator', FakeSimulator())
-
-    client = web_app.app.test_client()
-
-    r = client.post('/api/simulator/start').get_json()
-    assert r['success'] is True
-    assert state['running'] is True
-
-    s = client.get('/api/simulator/status').get_json()
-    assert s['running'] is True
-
-    r = client.post('/api/simulator/stop').get_json()
-    assert r['success'] is True
-    assert state['running'] is False
+    assert result['success'] is True
+    assert sim.current_mode == 'invalid_mode'
+    assert '--mode' in procs[1].args
+    assert 'invalid_mode' in procs[1].args
 
 
-def test_simulator_start_rejects_duplicate(monkeypatch):
-    import web_app
+def test_error_injection_mode_invalid_quaternion(monkeypatch, tmp_path):
+    sim = SerialSimulator(repo_root=tmp_path)
+    procs = []
+    _install(monkeypatch, sim, procs)
 
-    calls = []
+    result = sim.start(mode='invalid_quaternion')
 
-    class FakeSimulator:
-        def start(self):
-            calls.append('start')
-            if len(calls) > 1:
-                return {'success': False, 'error': 'Simulator is already running'}
-            return {'success': True, 'status': 'running'}
+    assert result['success'] is True
+    assert sim.current_mode == 'invalid_quaternion'
+    assert '--mode' in procs[1].args
+    assert 'invalid_quaternion' in procs[1].args
 
-        def stop(self):
-            return {'success': True, 'status': 'stopped'}
 
-    monkeypatch.setattr(web_app, 'simulator', FakeSimulator())
+def test_error_injection_mode_bad_crc(monkeypatch, tmp_path):
+    sim = SerialSimulator(repo_root=tmp_path)
+    procs = []
+    _install(monkeypatch, sim, procs)
 
-    client = web_app.app.test_client()
-    assert client.post('/api/simulator/start').get_json()['success'] is True
-    assert client.post('/api/simulator/start').get_json()['success'] is False
+    result = sim.start(mode='bad_crc')
+
+    assert result['success'] is True
+    assert sim.current_mode == 'bad_crc'
+    assert '--mode' in procs[1].args
+    assert 'bad_crc' in procs[1].args
+
+
+def test_error_injection_invalid_mode_rejected(monkeypatch, tmp_path):
+    sim = SerialSimulator(repo_root=tmp_path)
+    procs = []
+    _install(monkeypatch, sim, procs)
+
+    result = sim.start(mode='arbitrary_string')
+
+    assert result['success'] is False
+    assert 'Invalid error injection mode' in result['error']
+    assert sim.status == 'error'
+    assert len(procs) == 0  # No processes spawned
+
+
+def test_error_injection_mode_default_is_normal(monkeypatch, tmp_path):
+    sim = SerialSimulator(repo_root=tmp_path)
+    procs = []
+    _install(monkeypatch, sim, procs)
+
+    result = sim.start()  # No mode argument
+
+    assert result['success'] is True
+    assert sim.current_mode == 'normal'
+    assert '--mode' in procs[1].args
+    assert 'normal' in procs[1].args

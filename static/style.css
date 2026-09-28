@@ -9,7 +9,7 @@
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     background-color: #1e1e1e;
-    color: #d4d4d4;
+    color: #e8e8e8;
     line-height: 1.6;
 }
 
@@ -167,7 +167,7 @@ body {
 .log-mode-select {
     padding: 8px 12px;
     background-color: #1e1e1e;
-    color: #d4d4d4;
+    color: #e8e8e8;
     border: 1px solid #3e3e3e;
     border-radius: 4px;
     font-size: 14px;
@@ -215,7 +215,7 @@ body {
     padding: 10px;
     margin-bottom: 15px;
     background-color: #1e1e1e;
-    color: #d4d4d4;
+    color: #e8e8e8;
     border: 1px solid #3e3e3e;
     border-radius: 4px;
     font-size: 14px;
@@ -246,7 +246,7 @@ body {
     min-width: 200px;
     padding: 10px;
     background-color: #1e1e1e;
-    color: #d4d4d4;
+    color: #e8e8e8;
     border: 1px solid #3e3e3e;
     border-radius: 4px;
     font-size: 14px;
@@ -326,7 +326,7 @@ body {
     display: block;
     font-size: 24px;
     font-weight: bold;
-    color: #d4d4d4;
+    color: #e8e8e8;
 }
 
 .rates {
@@ -399,24 +399,28 @@ body {
 
 .message-fields {
     margin-bottom: 15px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px 16px;
 }
 
 .field-item {
     display: flex;
-    justify-content: space-between;
-    padding: 8px 0;
-    border-bottom: 1px solid #1e1e1e;
+    flex-direction: column;
+    padding: 6px 0;
 }
 
 .field-name {
-    color: #858585;
-    font-size: 14px;
+    color: #9d9d9d;
+    font-size: 12px;
+    margin-bottom: 2px;
 }
 
 .field-value {
-    color: #d4d4d4;
+    color: #e8e8e8;
     font-weight: 500;
     font-family: 'Courier New', monospace;
+    font-size: 14px;
 }
 
 .validation-section {
@@ -424,21 +428,24 @@ body {
 }
 
 .validation-title {
-    font-size: 14px;
-    color: #858585;
+    font-size: 13px;
+    color: #9d9d9d;
     margin-bottom: 8px;
+    font-weight: 600;
 }
 
 .validation-item {
     display: flex;
     align-items: center;
-    padding: 5px 0;
+    padding: 4px 0;
     font-size: 13px;
+    color: #e8e8e8;
 }
 
 .validation-icon {
     margin-right: 8px;
     font-weight: bold;
+    font-size: 14px;
 }
 
 .validation-icon.pass {
@@ -469,33 +476,39 @@ body {
     word-break: break-all;
 }
 
-/* Events */
-.events {
+/* Events - Elevated for debugging */
+.events-prominent {
     background-color: #252526;
     padding: 20px;
     border-radius: 8px;
+    margin-bottom: 20px;
+    border-left: 4px solid #FF9800;
 }
 
-.events h2 {
-    color: #007acc;
+.events-prominent h2 {
+    color: #FF9800;
     margin-bottom: 15px;
     font-size: 18px;
+    font-weight: 600;
 }
 
-.events-list {
+.events-list-prominent {
     background-color: #1e1e1e;
     padding: 15px;
     border-radius: 4px;
-    max-height: 300px;
+    min-height: 280px;
+    max-height: 480px;
     overflow-y: auto;
+    border: 1px solid #3e3e3e;
 }
 
 .event-item {
     padding: 8px 0;
-    border-bottom: 1px solid #252526;
+    border-bottom: 1px solid #2a2a2a;
     font-size: 13px;
     color: #FF9800;
     font-family: 'Courier New', monospace;
+    line-height: 1.5;
 }
 
 .event-item:last-child {
@@ -547,7 +560,7 @@ body {
 
 .src-btn {
     background-color: #3a3d41;
-    color: #d4d4d4;
+    color: #e8e8e8;
     border: 1px solid #4a4d51;
 }
 
@@ -577,7 +590,7 @@ body {
 #session-text {
     font-size: 15px;
     font-weight: 500;
-    color: #d4d4d4;
+    color: #e8e8e8;
     display: block;
 }
 
@@ -635,19 +648,19 @@ body {
     gap: 12px;
     margin-bottom: 12px;
     font-size: 14px;
-    color: #d4d4d4;
+    color: #e8e8e8;
 }
 
 .config-row label {
     min-width: 80px;
-    color: #858585;
+    color: #9d9d9d;
 }
 
 .config-select {
     flex: 1;
     padding: 8px 12px;
     background-color: #252526;
-    color: #d4d4d4;
+    color: #e8e8e8;
     border: 1px solid #3e3e3e;
     border-radius: 4px;
     font-size: 14px;
@@ -672,10 +685,27 @@ body {
     width: 120px;
     padding: 8px 10px;
     background-color: #252526;
-    color: #d4d4d4;
+    color: #e8e8e8;
     border: 1px solid #3e3e3e;
     border-radius: 4px;
     font-size: 14px;
+}
+
+#error-injection-row {
+    border-top: 1px solid #3e3e3e;
+    padding-top: 12px;
+    margin-top: 8px;
+}
+
+#error-injection-row label {
+    color: #FF9800;
+    font-weight: 500;
+}
+
+#error-mode-select {
+    background-color: #2a1a1a;
+    border: 1px solid #FF9800;
+    color: #e8e8e8;
 }
 
 .live-error {
