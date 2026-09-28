@@ -20,6 +20,8 @@ function setupEventHandlers() {
     document.getElementById('btn-start-replay').addEventListener('click', startReplay);
     document.getElementById('btn-start-live').addEventListener('click', startLive);
     document.getElementById('btn-refresh-interfaces').addEventListener('click', loadSocketCANInterfaces);
+    document.getElementById('btn-start-live-serial').addEventListener('click', startLiveSerial);
+    document.getElementById('btn-refresh-serial-ports').addEventListener('click', loadSerialPorts);
     document.getElementById('log-mode-select').addEventListener('change', setLogMode);
 }
 
@@ -48,11 +50,18 @@ async function loadStatus() {
             document.getElementById('protocol-name').textContent = `协议: ${protocolName}`;
         }
 
+        // Store transport type globally
+        window.transportType = data.transport_type || 'socketcan';
+
         // Load log files for replay
         loadLogFiles();
 
-        // Load SocketCAN interfaces and update Live button
-        await loadSocketCANInterfaces();
+        // Load interfaces based on transport type
+        if (window.transportType === 'serial') {
+            await loadSerialPorts();
+        } else {
+            await loadSocketCANInterfaces();
+        }
     } catch (error) {
         console.error('Failed to load status:', error);
     }
@@ -151,9 +160,18 @@ function createMessageCard(name, data) {
     // Header
     const header = document.createElement('div');
     header.className = 'message-header';
+
+    // Build info string based on available fields
+    let infoStr = '';
+    if (data.can_id) {
+        infoStr = `${data.can_id} | DLC=${data.dlc}`;
+    } else if (data.frame_length) {
+        infoStr = `${name} | LEN=${data.frame_length}`;
+    }
+
     header.innerHTML = `
         <span class="message-name">${name}</span>
-        <span class="message-info">${data.can_id} DLC=${data.dlc}</span>
+        <span class="message-info">${infoStr}</span>
     `;
     card.appendChild(header);
 
@@ -419,16 +437,98 @@ async function loadSocketCANInterfaces() {
     }
 }
 
+// Load serial ports
+async function loadSerialPorts() {
+    try {
+        const response = await fetch('/api/serial_ports');
+        const data = await response.json();
+
+        const liveBtn = document.getElementById('btn-live');
+        const select = document.getElementById('serial-port-select');
+
+        // Enable Live button for Serial
+        liveBtn.disabled = false;
+        liveBtn.title = '启动串口实时监控';
+        liveBtn.textContent = 'Live 模式';
+
+        // Populate port selector
+        select.innerHTML = '<option value="">-- 选择串口 --</option>';
+        for (const portInfo of data.ports) {
+            const option = document.createElement('option');
+            option.value = portInfo.device;
+            option.textContent = `${portInfo.device} - ${portInfo.description}`;
+            select.appendChild(option);
+        }
+
+        // Show status if no ports
+        const liveStatus = document.getElementById('live-serial-status');
+        if (data.ports.length === 0) {
+            liveStatus.innerHTML = '<span class="status-warning">⚠ 无可用串口</span>';
+        } else {
+            liveStatus.innerHTML = '';
+        }
+
+    } catch (error) {
+        console.error('Failed to load serial ports:', error);
+    }
+}
+
+// Start Live Serial mode
+async function startLiveSerial() {
+    const select = document.getElementById('serial-port-select');
+    const port = select.value;
+    const baudrateInput = document.getElementById('serial-baudrate');
+    const baudrate = parseInt(baudrateInput.value);
+
+    if (!port) {
+        alert('请选择一个串口');
+        return;
+    }
+
+    if (!baudrate || baudrate < 300 || baudrate > 115200) {
+        alert('请输入有效的波特率 (300-115200)');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/start_live_serial', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({port: port, baudrate: baudrate})
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            hideLivePanel();
+        } else {
+            alert('启动 Serial Live 模式失败: ' + (data.error || '未知错误'));
+        }
+    } catch (error) {
+        console.error('Failed to start live serial:', error);
+        alert('启动 Serial Live 模式失败: ' + error.message);
+    }
+}
+
 // Show Live panel
 function showLivePanel() {
-    loadSocketCANInterfaces();
-    document.getElementById('live-section').style.display = 'block';
     hideReplayPanel();
+
+    // Show appropriate panel based on transport type
+    if (window.transportType === 'serial') {
+        loadSerialPorts();
+        document.getElementById('live-serial-section').style.display = 'block';
+        document.getElementById('live-can-section').style.display = 'none';
+    } else {
+        loadSocketCANInterfaces();
+        document.getElementById('live-can-section').style.display = 'block';
+        document.getElementById('live-serial-section').style.display = 'none';
+    }
 }
 
 // Hide Live panel
 function hideLivePanel() {
-    document.getElementById('live-section').style.display = 'none';
+    document.getElementById('live-can-section').style.display = 'none';
+    document.getElementById('live-serial-section').style.display = 'none';
 }
 
 // Start Live mode

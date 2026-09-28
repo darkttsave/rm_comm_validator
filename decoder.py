@@ -8,13 +8,16 @@ from protocol import Protocol, Message, Field
 
 @dataclass
 class DecodedMessage:
-    """Decoded CAN message with all fields."""
+    """Decoded message with all fields."""
     message_name: str
-    can_id: int
-    dlc: int
     raw: bytes
     fields: Dict[str, Any]
     timestamp: Optional[float] = None
+    # CAN-specific (optional)
+    can_id: Optional[int] = None
+    dlc: Optional[int] = None
+    # Serial-specific (optional)
+    frame_length: Optional[int] = None
 
 
 class Decoder:
@@ -49,6 +52,35 @@ class Decoder:
             message_name=message_def.name,
             can_id=can_id,
             dlc=len(data),
+            raw=data,
+            fields=fields,
+            timestamp=timestamp
+        )
+
+    def decode_message(self, message_name: str, data: bytes, timestamp: Optional[float] = None) -> Optional[DecodedMessage]:
+        """
+        Decode a message by name (for Serial).
+
+        Args:
+            message_name: Message name from protocol
+            data: Raw frame bytes
+            timestamp: Optional timestamp
+
+        Returns:
+            DecodedMessage or None if unknown message name
+        """
+        message_def = self.protocol.get_message_by_name(message_name)
+        if message_def is None:
+            return None
+
+        fields = {}
+        for field in message_def.fields:
+            value = self._decode_field(data, field)
+            fields[field.name] = value
+
+        return DecodedMessage(
+            message_name=message_def.name,
+            frame_length=len(data),
             raw=data,
             fields=fields,
             timestamp=timestamp

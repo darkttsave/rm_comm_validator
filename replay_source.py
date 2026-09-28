@@ -6,7 +6,7 @@ from typing import Callable, Optional
 
 
 class ReplaySource:
-    """Replay CAN messages from JSONL log files."""
+    """Replay CAN and Serial messages from JSONL log files."""
 
     def __init__(self, jsonl_path: str):
         """Initialize replay source with log file."""
@@ -65,12 +65,21 @@ class ReplaySource:
                 time.sleep(sleep_time)
 
             # Extract raw data
-            can_id = int(record['can_id'], 16)
             raw_hex = record['raw'].replace(' ', '')
             raw_data = bytes.fromhex(raw_hex)
 
-            # Callback with CAN frame
-            callback(can_id, raw_data, record['timestamp'])
+            # Determine transport type (backward compatibility)
+            transport = record.get('transport', 'can')  # Default to CAN for old logs
+
+            if transport == 'can' or 'can_id' in record:
+                # CAN message
+                can_id = int(record['can_id'], 16)
+                callback(can_id, raw_data, record['timestamp'])
+            else:
+                # Serial message - callback expects (message_name, raw_data, timestamp)
+                # For serial replay, we need the message name from the log
+                message_name = record.get('message', 'unknown')
+                callback(message_name, raw_data, record['timestamp'])
 
             self.current_index += 1
 

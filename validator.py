@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import List, Dict, Any
 from protocol import Protocol, Message
 from decoder import DecodedMessage
+from crc_algorithms import tongji_crc16
 
 
 @dataclass
@@ -31,33 +32,56 @@ class Validator:
         """
         results = []
 
-        # Get message definition
-        message_def = self.protocol.get_message_by_id(decoded.can_id)
+        # Get message definition by CAN ID or name
+        if decoded.can_id is not None:
+            message_def = self.protocol.get_message_by_id(decoded.can_id)
+        else:
+            message_def = self.protocol.get_message_by_name(decoded.message_name)
 
         if message_def is None:
-            # Unknown CAN ID
-            results.append(ValidationResult(
-                check="CAN_ID",
-                passed=False,
-                message=f"Unknown CAN ID: 0x{decoded.can_id:X}"
-            ))
+            # Unknown message
+            if decoded.can_id is not None:
+                results.append(ValidationResult(
+                    check="CAN_ID",
+                    passed=False,
+                    message=f"Unknown CAN ID: 0x{decoded.can_id:X}"
+                ))
+            else:
+                results.append(ValidationResult(
+                    check="MESSAGE",
+                    passed=False,
+                    message=f"Unknown message: {decoded.message_name}"
+                ))
             return results
 
-        # CAN ID check
-        results.append(ValidationResult(
-            check="CAN_ID",
-            passed=True,
-            message=f"Known ID: {message_def.name}"
-        ))
+        # CAN-specific validations
+        if decoded.can_id is not None:
+            # CAN ID check
+            results.append(ValidationResult(
+                check="CAN_ID",
+                passed=True,
+                message=f"Known ID: {message_def.name}"
+            ))
 
-        # DLC check
-        expected_dlc = message_def.dlc
-        actual_dlc = decoded.dlc
-        results.append(ValidationResult(
-            check="DLC",
-            passed=(actual_dlc == expected_dlc),
-            message=f"Expected {expected_dlc}, got {actual_dlc}"
-        ))
+            # DLC check
+            expected_dlc = message_def.dlc
+            actual_dlc = decoded.dlc
+            results.append(ValidationResult(
+                check="DLC",
+                passed=(actual_dlc == expected_dlc),
+                message=f"Expected {expected_dlc}, got {actual_dlc}"
+            ))
+
+        # Serial-specific validations
+        if decoded.frame_length is not None:
+            # Frame length check
+            expected_length = message_def.frame_length
+            actual_length = decoded.frame_length
+            results.append(ValidationResult(
+                check="FRAME_LENGTH",
+                passed=(actual_length == expected_length),
+                message=f"Expected {expected_length}, got {actual_length}"
+            ))
 
         # Enum checks
         for field in message_def.fields:
@@ -86,6 +110,12 @@ class Validator:
                     decoded.fields,
                     validator_def.fields,
                     validator_def.tolerance or 0.01
+                )
+                results.append(result)
+            elif validator_def.type == "crc16":
+                result = self._validate_crc16(
+                    decoded.raw,
+                    validator_def.fields
                 )
                 results.append(result)
 
@@ -119,6 +149,63 @@ class Validator:
         except Exception as e:
             return ValidationResult(
                 check="QUAT_NORM",
+                passed=False,
+                message=f"Error: {str(e)}"
+            )
+
+    def _validate_crc16(
+        self,
+        raw_data: bytes,
+        field_names: List[str]
+    ) -> ValidationResult:
+        """
+        Validate CRC16.
+
+        Args:
+            raw_data: Complete frame bytes
+            field_names: List with algorithm name (e.g., ['tongji_crc16', 'offset:41'])
+        """
+        try:
+            # Parse parameters
+            algorithm = field_names[0] if len(field_names) > 0 else 'tongji_crc16'
+
+            # Parse CRC offset if provided
+            crc_offset = None
+            if len(field_names) > 1 and field_names[1].startswith('offset:'):
+                crc_offset = int(field_names[1].split(':')[1])
+
+            # Default: CRC is last 2 bytes
+            if crc_offset is None:
+                crc_offset = len(raw_data) - 2
+
+            # Extract received CRC (little-endian uint16)
+            received_crc = int.from_bytes(
+                raw_data[crc_offset:crc_offset + 2],
+                byteorder='little'
+            )
+
+            # Calculate expected CRC over data before CRC field
+            data_for_crc = raw_data[:crc_offset]
+
+            if algorithm == 'tongji_crc16':
+                expected_crc = tongji_crc16(data_for_crc)
+            else:
+                return ValidationResult(
+                    check="CRC16",
+                    passed=False,
+                    message=f"Unknown CRC algorithm: {algorithm}"
+                )
+
+            passed = (received_crc == expected_crc)
+
+            return ValidationResult(
+                check="CRC16",
+                passed=passed,
+                message=f"Received: 0x{received_crc:04X}, Expected: 0x{expected_crc:04X}"
+            )
+        except Exception as e:
+            return ValidationResult(
+                check="CRC16",
                 passed=False,
                 message=f"Error: {str(e)}"
             )

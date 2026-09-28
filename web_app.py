@@ -12,8 +12,10 @@ from validator import Validator
 from demo_source import DemoSource
 from replay_source import ReplaySource
 from live_can_source import LiveCANSource
+from live_serial_source import LiveSerialSource
 from recorder import Recorder
 from socketcan_utils import is_linux, get_available_socketcan_interfaces, interface_exists
+from serial_utils import get_available_serial_ports, port_exists
 
 
 app = Flask(__name__)
@@ -34,6 +36,7 @@ class AppState:
 
         # Live mode specific
         self.interface = None  # Current SocketCAN interface
+        self.serial_port = None  # Current Serial port
         self.connection_status = None  # 'connected', 'disconnected', 'error'
         self.last_error = None
 
@@ -99,7 +102,10 @@ def handle_frame(can_id, raw_data, timestamp):
 
         # Record unknown frame if logging errors or all
         if state.recorder and state.log_mode in ('errors', 'all'):
-            state.recorder.record(None, None, can_id, len(raw_data), raw_data, timestamp)
+            state.recorder.record(
+                None, None, can_id, len(raw_data), raw_data, timestamp,
+                transport='can'
+            )
             state.recorded_frames += 1
 
         return
@@ -129,7 +135,81 @@ def handle_frame(can_id, raw_data, timestamp):
 
         if should_record:
             state.recorder.record(
-                decoded, validation, can_id, len(raw_data), raw_data, timestamp
+                decoded, validation, can_id, len(raw_data), raw_data, timestamp,
+                transport='can'
+            )
+            state.recorded_frames += 1
+
+    # Store latest message by type
+    state.latest_messages[decoded.message_name] = {
+        'decoded': decoded,
+        'validation': validation,
+        'all_passed': all_passed
+    }
+
+
+def handle_serial_frame(raw_data, timestamp):
+    """Process a Serial frame."""
+    state.total_frames += 1
+
+    # For serial, we need to determine which message this is
+    # Assuming single RX message for now (Tongji gimbal_to_vision)
+    message_name = None
+    for msg in state.protocol.messages:
+        if msg.direction == 'rx' and msg.frame_length == len(raw_data):
+            message_name = msg.name
+            break
+
+    if message_name is None:
+        # Unknown frame length
+        state.unknown_frames += 1
+        event = f"{time.strftime('%H:%M:%S')} Unknown Serial frame length: {len(raw_data)}"
+        add_event(event)
+
+        # Record unknown frame if logging errors or all
+        if state.recorder and state.log_mode in ('errors', 'all'):
+            state.recorder.record(
+                None, None, None, None, raw_data, timestamp,
+                transport='serial', port=state.serial_port
+            )
+            state.recorded_frames += 1
+
+        return
+
+    # Decode
+    decoded = state.decoder.decode_message(message_name, raw_data, timestamp)
+
+    if decoded is None:
+        state.unknown_frames += 1
+        return
+
+    # Validate
+    validation = state.validator.validate(decoded)
+
+    # Check if valid
+    all_passed = all(v.passed for v in validation)
+    if all_passed:
+        state.valid_frames += 1
+    else:
+        state.invalid_frames += 1
+        # Log failed validations
+        for v in validation:
+            if not v.passed:
+                event = f"{time.strftime('%H:%M:%S')} {decoded.message_name}: {v.check} failed"
+                add_event(event)
+
+    # Record frame based on log mode
+    if state.recorder:
+        should_record = False
+        if state.log_mode == 'all':
+            should_record = True
+        elif state.log_mode == 'errors' and not all_passed:
+            should_record = True
+
+        if should_record:
+            state.recorder.record(
+                decoded, validation, None, None, raw_data, timestamp,
+                transport='serial', port=state.serial_port
             )
             state.recorded_frames += 1
 
@@ -241,6 +321,81 @@ def start_live(interface):
         return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
 
 
+def start_live_serial(port, baudrate):
+    """Start live Serial mode."""
+    if state.running:
+        return {'success': False, 'error': 'Another source is already running'}
+
+    try:
+        # Get serial frame configuration from protocol
+        rx_messages = [msg for msg in state.protocol.messages if msg.direction == 'rx']
+        if not rx_messages:
+            return {'success': False, 'error': 'No RX messages defined in protocol'}
+
+        # Use first RX message for framing
+        rx_msg = rx_messages[0]
+
+        # Determine header from protocol fields
+        # Assume header fields are named header_0, header_1, etc.
+        header_bytes = []
+        for field in rx_msg.fields:
+            if field.name.startswith('header_'):
+                # Header fields should be uint8
+                # For Tongji: 0x53, 0x50 ('S', 'P')
+                if field.name == 'header_0':
+                    header_bytes.insert(0, 0x53)  # 'S'
+                elif field.name == 'header_1':
+                    header_bytes.insert(1, 0x50)  # 'P'
+
+        if not header_bytes:
+            # Default fallback
+            header_bytes = [0x53, 0x50]
+
+        header = bytes(header_bytes)
+        frame_length = rx_msg.frame_length
+
+        # Get transport config
+        transport = state.protocol.transport
+
+        state.mode = 'live'
+        state.serial_port = port
+        state.source = LiveSerialSource(
+            port=port,
+            baudrate=baudrate,
+            header=header,
+            frame_length=frame_length,
+            bytesize=transport.bytesize or 8,
+            parity=transport.parity or 'N',
+            stopbits=transport.stopbits or 1,
+            timeout_ms=transport.timeout_ms or 20
+        )
+
+        # Connect to Serial port
+        state.source.connect()
+        state.connection_status = 'connected'
+        state.last_error = None
+
+        # Reset statistics
+        reset_statistics()
+
+        # Start recorder if needed
+        start_recorder_if_needed('live_serial', port)
+
+        # Start receiving
+        state.running = True
+        state.source.start(handle_serial_frame)
+
+        return {'success': True}
+
+    except Exception as e:
+        state.connection_status = 'error'
+        state.last_error = str(e)
+        state.mode = None
+        state.serial_port = None
+        stop_recorder_if_active()  # Clean up recorder on failure
+        return {'success': False, 'error': f'Failed to connect to {port}: {str(e)}'}
+
+
 def start_recorder_if_needed(mode, interface=None):
     """Start recorder based on log mode."""
     if state.log_mode == 'none':
@@ -291,6 +446,7 @@ def stop_source():
 
     state.mode = None
     state.interface = None
+    state.serial_port = None
     state.connection_status = 'disconnected'
 
 
@@ -334,10 +490,12 @@ def api_status():
 
     return jsonify({
         'protocol': state.protocol.filepath if state.protocol else None,
+        'transport_type': state.protocol.transport.type if state.protocol else None,
         'mode': state.mode,
         'running': state.running,
         'error_injection': state.error_injection,
         'interface': state.interface,
+        'serial_port': state.serial_port,
         'connection_status': state.connection_status,
         'last_error': state.last_error,
         'log_mode': state.log_mode,
@@ -363,9 +521,7 @@ def api_messages():
         decoded = data['decoded']
         validation = data['validation']
 
-        messages[msg_name] = {
-            'can_id': f"0x{decoded.can_id:X}",
-            'dlc': decoded.dlc,
+        msg_info = {
             'raw': decoded.raw.hex(' ').upper(),
             'fields': decoded.fields,
             'validation': [
@@ -378,6 +534,15 @@ def api_messages():
             ],
             'all_passed': data['all_passed']
         }
+
+        # Add transport-specific fields
+        if decoded.can_id is not None:
+            msg_info['can_id'] = f"0x{decoded.can_id:X}"
+            msg_info['dlc'] = decoded.dlc
+        if decoded.frame_length is not None:
+            msg_info['frame_length'] = decoded.frame_length
+
+        messages[msg_name] = msg_info
 
     return jsonify(messages)
 
@@ -476,6 +641,29 @@ def api_socketcan_interfaces():
         'interfaces': config['available_interfaces'],
         'default': config['default_interface']
     })
+
+
+@app.route('/api/serial_ports')
+def api_serial_ports():
+    """Get available serial ports."""
+    ports = get_available_serial_ports()
+    return jsonify({
+        'ports': ports
+    })
+
+
+@app.route('/api/start_live_serial', methods=['POST'])
+def api_start_live_serial():
+    """Start live Serial mode."""
+    data = request.json
+    port = data.get('port')
+    baudrate = data.get('baudrate', 9600)
+
+    if not port:
+        return jsonify({'success': False, 'error': 'No port provided'})
+
+    result = start_live_serial(port, baudrate)
+    return jsonify(result)
 
 
 @app.route('/api/set_log_mode', methods=['POST'])

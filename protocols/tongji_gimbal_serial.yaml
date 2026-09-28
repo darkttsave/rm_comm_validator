@@ -1,0 +1,157 @@
+# Tongji Gimbal Serial Protocol - Reference Profile
+#
+# This is a REFERENCE protocol based on Tongji University sp_vision_25 project.
+# It is used for testing Serial Live infrastructure.
+# This is NOT the user's team production protocol.
+#
+# Source: https://github.com/Triton-Robotics/sp_vision_25
+#   - io/gimbal/gimbal.hpp
+#   - io/gimbal/gimbal.cpp
+#   - tools/crc.cpp
+#
+# Baudrate: 9600 (temporary default, not from original source)
+# Frame format: Fixed length, little-endian packed struct
+
+transport:
+  type: serial
+  # Port is selected at runtime via Web UI
+  port: null
+  baudrate: 9600  # Reference default - verify with actual hardware
+  bytesize: 8
+  parity: none
+  stopbits: 1
+  timeout_ms: 20
+
+messages:
+  - name: gimbal_to_vision
+    direction: rx
+    frame_length: 43
+    description: "Gimbal state to Vision (RX)"
+    fields:
+      # Header: 0x53 0x50 ('S' 'P')
+      - name: header_0
+        offset: 0
+        type: uint8
+        endian: little
+      - name: header_1
+        offset: 1
+        type: uint8
+        endian: little
+
+      # Mode
+      - name: mode
+        offset: 2
+        type: uint8
+        endian: little
+        enum:
+          0: IDLE
+          1: AUTO_AIM
+          2: SMALL_BUFF
+          3: BIG_BUFF
+
+      # Quaternion (w, x, y, z)
+      - name: q_w
+        offset: 3
+        type: float32
+        endian: little
+      - name: q_x
+        offset: 7
+        type: float32
+        endian: little
+      - name: q_y
+        offset: 11
+        type: float32
+        endian: little
+      - name: q_z
+        offset: 15
+        type: float32
+        endian: little
+
+      # Gimbal angles and velocities
+      - name: yaw
+        offset: 19
+        type: float32
+        endian: little
+      - name: yaw_vel
+        offset: 23
+        type: float32
+        endian: little
+      - name: pitch
+        offset: 27
+        type: float32
+        endian: little
+      - name: pitch_vel
+        offset: 31
+        type: float32
+        endian: little
+
+      # Shooter state
+      - name: bullet_speed
+        offset: 35
+        type: float32
+        endian: little
+      - name: bullet_count
+        offset: 39
+        type: uint16
+        endian: little
+
+      # CRC16 (last 2 bytes)
+      - name: crc16
+        offset: 41
+        type: uint16
+        endian: little
+
+    validators:
+      - type: quaternion_norm
+        fields: [q_w, q_x, q_y, q_z]
+        tolerance: 0.01
+      - type: crc16
+        fields: ['tongji_crc16', 'offset:41']
+
+  # Vision to Gimbal (TX) - NOT IMPLEMENTED in Live mode
+  # Included for protocol documentation only
+  - name: vision_to_gimbal
+    direction: tx
+    frame_length: 29
+    description: "Vision commands to Gimbal (TX) - NOT IMPLEMENTED"
+    fields:
+      - name: header_0
+        offset: 0
+        type: uint8
+        endian: little
+      - name: header_1
+        offset: 1
+        type: uint8
+        endian: little
+      - name: mode
+        offset: 2
+        type: uint8
+        endian: little
+      - name: yaw
+        offset: 3
+        type: float32
+        endian: little
+      - name: yaw_vel
+        offset: 7
+        type: float32
+        endian: little
+      - name: yaw_acc
+        offset: 11
+        type: float32
+        endian: little
+      - name: pitch
+        offset: 15
+        type: float32
+        endian: little
+      - name: pitch_vel
+        offset: 19
+        type: float32
+        endian: little
+      - name: pitch_acc
+        offset: 23
+        type: float32
+        endian: little
+      - name: crc16
+        offset: 27
+        type: uint16
+        endian: little

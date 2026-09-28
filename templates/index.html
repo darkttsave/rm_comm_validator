@@ -56,8 +56,8 @@
             <button id="btn-start-replay" class="btn btn-primary">开始回放</button>
         </section>
 
-        <!-- Live Interface Selection -->
-        <section id="live-section" class="live-section" style="display: none;">
+        <!-- Live Interface Selection - CAN -->
+        <section id="live-can-section" class="live-section" style="display: none;">
             <h3>SocketCAN 接口</h3>
             <div class="live-interface-selector">
                 <select id="live-interface-select" class="interface-select">
@@ -67,6 +67,26 @@
                 <button id="btn-start-live" class="btn btn-primary">开始 Live</button>
             </div>
             <div id="live-status" class="live-status"></div>
+        </section>
+
+        <!-- Live Interface Selection - Serial -->
+        <section id="live-serial-section" class="live-section" style="display: none;">
+            <h3>串口配置</h3>
+            <div class="live-serial-selector">
+                <div class="serial-port-selector">
+                    <label>串口:</label>
+                    <select id="serial-port-select" class="interface-select">
+                        <option value="">-- 选择串口 --</option>
+                    </select>
+                    <button id="btn-refresh-serial-ports" class="btn btn-secondary">刷新</button>
+                </div>
+                <div class="serial-baudrate-selector">
+                    <label>波特率:</label>
+                    <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
+                </div>
+                <button id="btn-start-live-serial" class="btn btn-primary">开始 Live</button>
+            </div>
+            <div id="live-serial-status" class="live-status"></div>
         </section>
 
         <!-- Statistics -->

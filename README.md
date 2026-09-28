@@ -171,6 +171,93 @@ python main.py monitor --protocol protocols/tongji_sentry.yaml --interface can0
 
 ---
 
+## Serial Live
+
+从 V1.2 开始支持串口通信的实时监控，适用于视觉↔电控通过串口通信的场景。
+
+### 快速开始
+
+**1. 启动 Web UI（串口协议）**:
+```bash
+./start_web.sh --protocol protocols/tongji_gimbal_serial.yaml
+```
+
+**2. Web 界面操作**:
+- 点击 "Live 模式"
+- 从下拉框选择串口（如 `/dev/ttyUSB0`, `COM3`）
+- 设置波特率（默认 9600）
+- 点击 "开始 Live"
+
+### Linux PTY 测试
+
+使用虚拟串口对进行测试：
+
+```bash
+# 1. 安装 socat
+sudo apt install socat
+
+# 2. 创建虚拟串口对
+socat -d -d pty,raw,echo=0 pty,raw,echo=0
+# 输出示例:
+# 2024/09/28 10:00:00 socat[1234] N PTY is /dev/pts/3
+# 2024/09/28 10:00:00 socat[1234] N PTY is /dev/pts/4
+
+# 3. 启动 Mock Gimbal（终端 A）
+python tools/mock_serial_node/mock_gimbal.py /dev/pts/3 --mode normal --rate 10
+
+# 4. 启动 Web UI（终端 B）
+./start_web.sh --protocol protocols/tongji_gimbal_serial.yaml
+
+# 5. Web 界面选择 /dev/pts/4，波特率 9600，点击 "开始 Live"
+```
+
+### Tongji Gimbal Reference Protocol
+
+`protocols/tongji_gimbal_serial.yaml` 是基于同济 sp_vision_25 项目的**参考协议**，用于测试 Serial Live 基础设施。
+
+**重要说明**:
+- ⚠️ 这不是用户队伍的最终生产协议
+- ✅ 仅用于验证串口通信功能
+- ✅ 用户应提供自己队伍的实际协议 YAML
+
+**协议特征**:
+- 固定帧头: `0x53 0x50` ('S' 'P')
+- 帧长度: 43 字节
+- 字节序: little-endian
+- CRC16: Tongji 算法（init=0xFFFF, poly=0x8408）
+- 波特率: 9600（参考默认值）
+
+### Mock 测试模式
+
+Mock Gimbal 支持多种测试模式：
+
+```bash
+# 正常模式
+python tools/mock_serial_node/mock_gimbal.py /dev/pts/3 --mode normal
+
+# 无效模式枚举
+python tools/mock_serial_node/mock_gimbal.py /dev/pts/3 --mode invalid_mode
+
+# 无效四元数（非归一化）
+python tools/mock_serial_node/mock_gimbal.py /dev/pts/3 --mode invalid_quaternion
+
+# CRC 错误
+python tools/mock_serial_node/mock_gimbal.py /dev/pts/3 --mode bad_crc
+```
+
+### 日志回放兼容性
+
+Serial 日志与 CAN 日志格式兼容，均可通过 Web Replay 模式回放。
+
+**日志格式差异**:
+- CAN 日志: `can_id`, `dlc` 字段
+- Serial 日志: `port`, `length` 字段
+- 通用字段: `timestamp`, `transport`, `raw`, `message`, `fields`, `validation`
+
+旧的 CAN 日志（无 `transport` 字段）自动识别为 CAN 日志，保持向后兼容。
+
+---
+
 ## 协议 YAML
 
 协议文件位于 `protocols/` 目录，定义 CAN 消息的解码规则。

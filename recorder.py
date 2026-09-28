@@ -1,4 +1,4 @@
-"""Data recorder for CAN messages."""
+"""Data recorder for CAN and Serial messages."""
 
 import json
 import os
@@ -9,7 +9,7 @@ from validator import ValidationResult
 
 
 class Recorder:
-    """JSONL recorder for CAN messages."""
+    """JSONL recorder for CAN and Serial messages."""
 
     def __init__(self, log_dir: str = "logs"):
         """Initialize recorder."""
@@ -41,35 +41,47 @@ class Recorder:
         self,
         decoded: Optional[DecodedMessage],
         validation: Optional[List[ValidationResult]],
-        can_id: int,
-        dlc: int,
+        can_id: Optional[int],
+        dlc: Optional[int],
         raw_data: bytes,
         timestamp: float,
-        direction: str = "rx"
+        direction: str = "rx",
+        transport: str = "can",
+        port: Optional[str] = None
     ):
         """
-        Record a CAN frame with decoded and validation results.
+        Record a frame with decoded and validation results.
 
         Args:
             decoded: Decoded message (None if unknown)
             validation: Validation results (None if unknown)
-            can_id: CAN ID
-            dlc: Data length code
+            can_id: CAN ID (for CAN transport)
+            dlc: Data length code (for CAN transport)
             raw_data: Raw payload bytes
             timestamp: Frame timestamp
             direction: rx or tx
+            transport: 'can' or 'serial'
+            port: Serial port (for serial transport)
         """
         if not self.file_handle:
             return
 
-        # Build record
+        # Build record with common fields
         record = {
             "timestamp": timestamp,
+            "transport": transport,
             "direction": direction,
-            "can_id": f"0x{can_id:X}",
-            "dlc": dlc,
             "raw": raw_data.hex(' ').upper()
         }
+
+        # Add transport-specific fields
+        if transport == "can":
+            record["can_id"] = f"0x{can_id:X}"
+            record["dlc"] = dlc
+        elif transport == "serial":
+            if port:
+                record["port"] = port
+            record["length"] = len(raw_data)
 
         if decoded:
             record["message"] = decoded.message_name
