@@ -261,6 +261,9 @@ def test_virtual_serial_auto_start(monkeypatch, tmp_path):
             started.clear()
             return {'success': True, 'status': 'stopped'}
 
+        def cleanup(self):
+            pass
+
     fake_sim = FakeSerialSim()
     monkeypatch.setattr(web_app, 'serial_simulator', fake_sim)
 
@@ -501,10 +504,13 @@ def test_can_simulator_checks_vcan_available(monkeypatch, tmp_path):
     """Test that CAN simulator checks vcan0 availability."""
     sim = CANSimulator(repo_root=tmp_path)
 
-    # Mock vcan check to return False
-    def fake_vcan_check():
-        return False
+    # Mock Mock EC executable to exist
+    mock_ec_path = tmp_path / 'tools' / 'mock_ec_node' / 'build' / 'mock_ec_node'
+    mock_ec_path.parent.mkdir(parents=True, exist_ok=True)
+    mock_ec_path.write_text('#!/bin/bash\necho mock')
+    mock_ec_path.chmod(0o755)
 
+    # Mock vcan check to return False
     monkeypatch.setattr(CANSimulator, 'vcan_available', property(lambda self: False))
 
     result = sim.start()
