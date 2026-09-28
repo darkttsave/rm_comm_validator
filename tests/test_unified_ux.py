@@ -253,7 +253,7 @@ def test_virtual_serial_auto_start(monkeypatch, tmp_path):
                 'label': 'RM Virtual Serial',
             }
 
-        def start(self):
+        def start(self, mode='normal'):
             started.append(True)
             return {'success': True, 'status': 'running'}
 
@@ -393,7 +393,7 @@ def test_virtual_can_auto_start(monkeypatch):
                 'label': 'RM Virtual CAN',
             }
 
-        def start(self):
+        def start(self, mode='normal'):
             started.append(True)
             return {'success': True, 'status': 'running'}
 
