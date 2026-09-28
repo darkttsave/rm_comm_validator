@@ -1,5 +1,6 @@
 """Web UI for RM Communication Validator."""
 
+import atexit
 import os
 import threading
 import time
@@ -15,7 +16,8 @@ from live_can_source import LiveCANSource
 from live_serial_source import LiveSerialSource
 from recorder import Recorder
 from socketcan_utils import is_linux, get_available_socketcan_interfaces, interface_exists
-from serial_utils import get_available_serial_ports, port_exists
+from serial_utils import get_available_serial_ports, build_unified_endpoints
+from serial_simulator import SerialSimulator
 
 
 app = Flask(__name__)
@@ -39,6 +41,11 @@ class AppState:
         self.serial_port = None  # Current Serial port
         self.connection_status = None  # 'connected', 'disconnected', 'error'
         self.last_error = None
+
+        # Session state (unified workflow)
+        self.session_status = 'idle'  # idle | connecting | running | error
+        self.endpoint_label = None  # display label of current endpoint
+        self.serial_baudrate = None  # current serial baudrate
 
         # Logging
         self.log_mode = 'errors'  # 'none', 'errors', 'all'
@@ -70,6 +77,36 @@ config = {
     'default_interface': None,  # Set from CLI or YAML
     'available_interfaces': []
 }
+
+# Virtual serial simulator (socat PTY bridge + mock gimbal node), owned by
+# this web process. It is the only code path allowed to spawn/stop it.
+simulator = SerialSimulator(Path(__file__).parent)
+
+
+def _cleanup_on_exit():
+    simulator.cleanup()
+
+
+atexit.register(_cleanup_on_exit)
+
+# Friendly context for serial open failures.
+SERIAL_ERROR_CAUSES = [
+    '设备当前不可用',
+    '设备被其他程序占用',
+    '当前设备节点不是可用的物理/虚拟串口',
+    '当前用户没有访问权限',
+]
+
+
+def friendly_serial_error(port, exc):
+    """Build a user-understandable serial error while keeping the raw detail."""
+    print(f"[Serial error] failed to open {port}: {exc}")
+    return {
+        'success': False,
+        'error': f'无法打开 {port}',
+        'detail': str(exc),
+        'causes': SERIAL_ERROR_CAUSES,
+    }
 
 
 def load_protocol(protocol_path):
@@ -234,6 +271,13 @@ def start_demo():
         return False
 
     state.mode = 'demo'
+    state.endpoint_label = 'Demo'
+    state.interface = None
+    state.serial_port = None
+    state.serial_baudrate = None
+    state.connection_status = None
+    state.last_error = None
+    state.session_status = 'running'
     state.source = DemoSource(state.protocol)
     state.source.enable_error_injection(state.error_injection)
 
@@ -259,6 +303,13 @@ def start_replay(jsonl_path):
 
     try:
         state.mode = 'replay'
+        state.endpoint_label = 'Replay'
+        state.interface = None
+        state.serial_port = None
+        state.serial_baudrate = None
+        state.connection_status = None
+        state.last_error = None
+        state.session_status = 'running'
         state.source = ReplaySource(jsonl_path)
 
         # Reset statistics
@@ -291,14 +342,22 @@ def start_live(interface):
     if not interface_exists(interface):
         return {'success': False, 'error': f'SocketCAN interface "{interface}" not found'}
 
+    state.session_status = 'connecting'
+    state.connection_status = 'connecting'
+    state.last_error = None
+
     try:
         state.mode = 'live'
         state.interface = interface
+        state.endpoint_label = interface
+        state.serial_port = None
+        state.serial_baudrate = None
         state.source = LiveCANSource(interface)
 
         # Connect to SocketCAN
         state.source.connect()
         state.connection_status = 'connected'
+        state.session_status = 'running'
         state.last_error = None
 
         # Reset statistics
@@ -315,21 +374,31 @@ def start_live(interface):
 
     except Exception as e:
         state.connection_status = 'error'
+        state.session_status = 'error'
         state.last_error = str(e)
         state.mode = None
         stop_recorder_if_active()  # Clean up recorder on failure
         return {'success': False, 'error': f'Failed to connect to {interface}: {str(e)}'}
 
 
-def start_live_serial(port, baudrate):
+def start_live_serial(port, baudrate, label=None):
     """Start live Serial mode."""
     if state.running:
         return {'success': False, 'error': 'Another source is already running'}
+
+    # Virtual endpoint requires a running simulator (the PTY bridge).
+    if port == simulator.VALIDATOR_DEVICE and not simulator.get_status()['running']:
+        return {'success': False, 'error': '虚拟串口尚未就绪，请先启动模拟器 (RM Virtual Serial)'}
+
+    state.session_status = 'connecting'
+    state.connection_status = 'connecting'
+    state.last_error = None
 
     try:
         # Get serial frame configuration from protocol
         rx_messages = [msg for msg in state.protocol.messages if msg.direction == 'rx']
         if not rx_messages:
+            state.session_status = 'error'
             return {'success': False, 'error': 'No RX messages defined in protocol'}
 
         # Use first RX message for framing
@@ -338,6 +407,7 @@ def start_live_serial(port, baudrate):
         # Frame header comes from protocol transport config (generic, not hardcoded)
         header = state.protocol.transport.header
         if header is None:
+            state.session_status = 'error'
             return {'success': False, 'error': 'Protocol does not define a frame header'}
 
         frame_length = rx_msg.frame_length
@@ -347,6 +417,9 @@ def start_live_serial(port, baudrate):
 
         state.mode = 'live'
         state.serial_port = port
+        state.serial_baudrate = baudrate
+        state.endpoint_label = label or port
+        state.interface = None
         state.source = LiveSerialSource(
             port=port,
             baudrate=baudrate,
@@ -361,6 +434,7 @@ def start_live_serial(port, baudrate):
         # Connect to Serial port
         state.source.connect()
         state.connection_status = 'connected'
+        state.session_status = 'running'
         state.last_error = None
 
         # Reset statistics
@@ -377,11 +451,12 @@ def start_live_serial(port, baudrate):
 
     except Exception as e:
         state.connection_status = 'error'
-        state.last_error = str(e)
+        state.session_status = 'error'
+        state.last_error = f'无法打开 {port}'
         state.mode = None
         state.serial_port = None
         stop_recorder_if_active()  # Clean up recorder on failure
-        return {'success': False, 'error': f'Failed to connect to {port}: {str(e)}'}
+        return friendly_serial_error(port, e)
 
 
 def start_recorder_if_needed(mode, interface=None):
@@ -435,7 +510,11 @@ def stop_source():
     state.mode = None
     state.interface = None
     state.serial_port = None
+    state.endpoint_label = None
+    state.serial_baudrate = None
     state.connection_status = 'disconnected'
+    state.session_status = 'idle'
+    state.last_error = None
 
 
 def reset_statistics():
@@ -491,6 +570,17 @@ def api_status():
         'log_file': state.log_file,
         'recorded_frames': state.recorded_frames,
         'runtime': runtime,
+        'session': {
+            'status': state.session_status,
+            'mode': state.mode,
+            'endpoint': state.serial_port or state.interface,
+            'endpoint_label': state.endpoint_label,
+            'baudrate': state.serial_baudrate,
+            'interface': state.interface,
+            'connection_status': state.connection_status,
+            'last_error': state.last_error,
+        },
+        'simulator': simulator.get_status(),
         'statistics': {
             'total': state.total_frames,
             'valid': state.valid_frames,
@@ -631,12 +721,15 @@ def api_socketcan_interfaces():
     })
 
 
-@app.route('/api/serial_ports')
-def api_serial_ports():
-    """Get available serial ports."""
-    ports = get_available_serial_ports()
+@app.route('/api/serial_endpoints')
+def api_serial_endpoints():
+    """Get unified serial endpoints (managed virtual + discovered physical)."""
+    virtual_status = simulator.get_status()
+    physical = get_available_serial_ports()
+    endpoints = build_unified_endpoints(physical, virtual_status)
     return jsonify({
-        'ports': ports
+        'endpoints': endpoints,
+        'virtual': virtual_status,
     })
 
 
@@ -646,12 +739,31 @@ def api_start_live_serial():
     data = request.json
     port = data.get('port')
     baudrate = data.get('baudrate', 9600)
+    label = data.get('label')
 
     if not port:
         return jsonify({'success': False, 'error': 'No port provided'})
 
-    result = start_live_serial(port, baudrate)
+    result = start_live_serial(port, baudrate, label=label)
     return jsonify(result)
+
+
+@app.route('/api/simulator/start', methods=['POST'])
+def api_simulator_start():
+    """Start the virtual serial simulator (socat bridge + mock node)."""
+    return jsonify(simulator.start())
+
+
+@app.route('/api/simulator/stop', methods=['POST'])
+def api_simulator_stop():
+    """Stop the virtual serial simulator."""
+    return jsonify(simulator.stop())
+
+
+@app.route('/api/simulator/status')
+def api_simulator_status():
+    """Get virtual serial simulator status."""
+    return jsonify(simulator.get_status())
 
 
 @app.route('/api/set_log_mode', methods=['POST'])

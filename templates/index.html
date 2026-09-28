@@ -19,23 +19,81 @@
 
         <!-- Control Panel -->
         <section class="control-panel">
-            <div class="mode-buttons">
-                <button id="btn-demo" class="btn btn-demo">Demo 模式</button>
-                <button id="btn-replay" class="btn btn-replay">Replay 模式</button>
-                <button id="btn-live" class="btn btn-live" disabled title="需要 Linux + SocketCAN">Live 模式 (不可用)</button>
-                <button id="btn-stop" class="btn btn-stop" disabled>停止</button>
+            <!-- Data source selection -->
+            <div class="source-panel">
+                <h2 class="panel-title">数据源</h2>
+                <div class="source-buttons">
+                    <button id="btn-src-demo" class="btn src-btn" data-src="demo">Demo</button>
+                    <button id="btn-src-replay" class="btn src-btn" data-src="replay">Replay</button>
+                    <button id="btn-src-live" class="btn src-btn" data-src="live">Live</button>
+                </div>
             </div>
-            <div class="mode-status">
-                <span id="mode-status">就绪</span>
+
+            <!-- Current session -->
+            <div class="session-panel">
+                <h2 class="panel-title">当前会话</h2>
+                <div id="session-detail" class="session-detail">
+                    <span id="session-text">就绪</span>
+                    <span id="session-status" class="session-status-idle">● Idle</span>
+                </div>
+                <div class="session-actions">
+                    <button id="btn-start" class="btn btn-start">Start</button>
+                    <button id="btn-stop" class="btn btn-stop" disabled>Stop</button>
+                </div>
             </div>
-            <div class="error-injection">
-                <label>
+
+            <!-- Replay config -->
+            <div id="config-replay" class="config-panel" hidden>
+                <h3>选择 JSONL 日志文件</h3>
+                <select id="replay-file-select" class="replay-select">
+                    <option value="">-- 选择日志文件 --</option>
+                </select>
+            </div>
+
+            <!-- Live config -->
+            <div id="config-live" class="config-panel" hidden>
+                <div id="config-live-can" hidden>
+                    <h3>SocketCAN 接口</h3>
+                    <div class="live-interface-selector">
+                        <select id="live-interface-select" class="interface-select">
+                            <option value="">-- 选择接口 --</option>
+                        </select>
+                        <button id="btn-refresh-interfaces" class="btn btn-secondary">刷新</button>
+                    </div>
+                    <div id="live-status" class="live-status"></div>
+                </div>
+
+                <div id="config-live-serial" hidden>
+                    <h3>Endpoint</h3>
+                    <div class="endpoint-selector">
+                        <select id="endpoint-select" class="interface-select">
+                            <option value="">-- 选择 Endpoint --</option>
+                        </select>
+                        <button id="btn-refresh-endpoints" class="btn btn-secondary">刷新</button>
+                    </div>
+                    <div class="baudrate-row">
+                        <label for="serial-baudrate">Baudrate:</label>
+                        <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
+                    </div>
+                    <div id="simulator-panel" class="simulator-panel">
+                        <span id="simulator-status" class="status-warning"></span>
+                        <div class="simulator-actions">
+                            <button id="btn-simulator-start" class="btn btn-secondary">Start Simulator</button>
+                            <button id="btn-simulator-stop" class="btn btn-secondary">Stop Simulator</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="live-error" class="live-error" hidden></div>
+            </div>
+
+            <!-- Options -->
+            <div class="options-row">
+                <label class="error-injection">
                     <input type="checkbox" id="chk-error-injection">
                     Demo 错误注入
                 </label>
-            </div>
-            <div class="log-mode-selector">
-                <label>
+                <label class="log-mode-selector">
                     日志记录:
                     <select id="log-mode-select" class="log-mode-select">
                         <option value="none">不记录</option>
@@ -45,48 +103,6 @@
                 </label>
             </div>
             <div id="log-status" class="log-status"></div>
-        </section>
-
-        <!-- Replay File Selection -->
-        <section id="replay-section" class="replay-section" style="display: none;">
-            <h3>选择 JSONL 日志文件</h3>
-            <select id="replay-file-select" class="replay-select">
-                <option value="">-- 选择日志文件 --</option>
-            </select>
-            <button id="btn-start-replay" class="btn btn-primary">开始回放</button>
-        </section>
-
-        <!-- Live Interface Selection - CAN -->
-        <section id="live-can-section" class="live-section" style="display: none;">
-            <h3>SocketCAN 接口</h3>
-            <div class="live-interface-selector">
-                <select id="live-interface-select" class="interface-select">
-                    <option value="">-- 选择接口 --</option>
-                </select>
-                <button id="btn-refresh-interfaces" class="btn btn-secondary">刷新</button>
-                <button id="btn-start-live" class="btn btn-primary">开始 Live</button>
-            </div>
-            <div id="live-status" class="live-status"></div>
-        </section>
-
-        <!-- Live Interface Selection - Serial -->
-        <section id="live-serial-section" class="live-section" style="display: none;">
-            <h3>串口配置</h3>
-            <div class="live-serial-selector">
-                <div class="serial-port-selector">
-                    <label>串口:</label>
-                    <select id="serial-port-select" class="interface-select">
-                        <option value="">-- 选择串口 --</option>
-                    </select>
-                    <button id="btn-refresh-serial-ports" class="btn btn-secondary">刷新</button>
-                </div>
-                <div class="serial-baudrate-selector">
-                    <label>波特率:</label>
-                    <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
-                </div>
-                <button id="btn-start-live-serial" class="btn btn-primary">开始 Live</button>
-            </div>
-            <div id="live-serial-status" class="live-status"></div>
         </section>
 
         <!-- Statistics -->
