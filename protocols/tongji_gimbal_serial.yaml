@@ -21,6 +21,7 @@ transport:
   parity: none
   stopbits: 1
   timeout_ms: 20
+  header: "5350"  # frame header bytes 'S' 'P' (hex)
 
 messages:
   - name: gimbal_to_vision

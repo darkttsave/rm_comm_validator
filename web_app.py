@@ -335,23 +335,11 @@ def start_live_serial(port, baudrate):
         # Use first RX message for framing
         rx_msg = rx_messages[0]
 
-        # Determine header from protocol fields
-        # Assume header fields are named header_0, header_1, etc.
-        header_bytes = []
-        for field in rx_msg.fields:
-            if field.name.startswith('header_'):
-                # Header fields should be uint8
-                # For Tongji: 0x53, 0x50 ('S', 'P')
-                if field.name == 'header_0':
-                    header_bytes.insert(0, 0x53)  # 'S'
-                elif field.name == 'header_1':
-                    header_bytes.insert(1, 0x50)  # 'P'
+        # Frame header comes from protocol transport config (generic, not hardcoded)
+        header = state.protocol.transport.header
+        if header is None:
+            return {'success': False, 'error': 'Protocol does not define a frame header'}
 
-        if not header_bytes:
-            # Default fallback
-            header_bytes = [0x53, 0x50]
-
-        header = bytes(header_bytes)
         frame_length = rx_msg.frame_length
 
         # Get transport config

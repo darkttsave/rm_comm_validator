@@ -59,6 +59,7 @@ class Transport:
     parity: Optional[str] = None
     stopbits: Optional[int] = None
     timeout_ms: Optional[int] = None
+    header: Optional[bytes] = None  # fixed frame header (serial)
 
 
 class Protocol:
@@ -75,6 +76,12 @@ class Protocol:
         transport_type = transport_data.get('type', 'socketcan')
 
         if transport_type == 'serial':
+            # Parse fixed frame header (hex string, e.g. "5350" -> b'SP')
+            header_bytes = None
+            header_str = transport_data.get('header')
+            if header_str:
+                header_bytes = bytes.fromhex(header_str)
+
             self.transport = Transport(
                 type='serial',
                 port=transport_data.get('port'),
@@ -82,7 +89,8 @@ class Protocol:
                 bytesize=transport_data.get('bytesize', 8),
                 parity=transport_data.get('parity', 'none'),
                 stopbits=transport_data.get('stopbits', 1),
-                timeout_ms=transport_data.get('timeout_ms', 20)
+                timeout_ms=transport_data.get('timeout_ms', 20),
+                header=header_bytes
             )
         else:
             # CAN transport

@@ -142,6 +142,7 @@ class TestSerialProtocol:
         assert protocol.transport.baudrate == 9600
         assert protocol.transport.bytesize == 8
         assert protocol.transport.parity == 'none'
+        assert protocol.transport.header == b'SP'
 
         # Check messages
         assert len(protocol.messages) >= 1
