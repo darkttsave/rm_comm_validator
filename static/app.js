@@ -253,12 +253,54 @@ function onEndpointChange() {
 }
 
 function updateErrorInjectionVisibility() {
-    // Show error injection mode selector only for Virtual Serial endpoint
+    // Show error injection mode selector for Virtual endpoints (Serial or CAN)
     const select = $('endpoint-select');
     const selectedOpt = select.options[select.selectedIndex];
     const kind = selectedOpt ? selectedOpt.dataset.kind : null;
-    const isVirtualSerial = (selectedTransport === 'serial' && kind === 'virtual');
-    $('error-injection-row').hidden = !isVirtualSerial;
+    const isVirtual = (kind === 'virtual');
+
+    if (isVirtual) {
+        $('error-injection-row').hidden = false;
+
+        // Populate error mode options based on transport
+        const errorModeSelect = $('error-mode-select');
+        errorModeSelect.innerHTML = '';
+
+        if (selectedTransport === 'serial') {
+            // Serial error modes
+            $('error-injection-label').textContent = '虚拟串口错误注入:';
+            const serialModes = [
+                { value: 'normal', label: '正常' },
+                { value: 'invalid_mode', label: '非法 Mode' },
+                { value: 'invalid_quaternion', label: '四元数异常' },
+                { value: 'bad_crc', label: 'CRC 错误' }
+            ];
+            for (const mode of serialModes) {
+                const opt = document.createElement('option');
+                opt.value = mode.value;
+                opt.textContent = mode.label;
+                errorModeSelect.appendChild(opt);
+            }
+        } else if (selectedTransport === 'socketcan') {
+            // CAN error modes
+            $('error-injection-label').textContent = '虚拟 CAN 错误注入:';
+            const canModes = [
+                { value: 'normal', label: '正常' },
+                { value: 'invalid_enum', label: '非法枚举' },
+                { value: 'invalid_quaternion', label: '四元数异常' },
+                { value: 'unknown_id', label: 'Unknown CAN ID' }
+            ];
+            for (const mode of canModes) {
+                const opt = document.createElement('option');
+                opt.value = mode.value;
+                opt.textContent = mode.label;
+                errorModeSelect.appendChild(opt);
+            }
+        }
+    } else {
+        // Physical endpoint: hide error injection
+        $('error-injection-row').hidden = true;
+    }
 }
 
 // ---- start / stop ----
@@ -301,7 +343,7 @@ async function startLive() {
             return;
         }
 
-        // Get error injection mode for virtual serial
+        // Get error injection mode for virtual endpoint
         const errorMode = (kind === 'virtual') ? $('error-mode-select').value : 'normal';
 
         result = await postJSON('/api/start_live_serial', {
@@ -312,10 +354,15 @@ async function startLive() {
             error_mode: errorMode
         });
     } else {
+        // CAN transport
+        // Get error injection mode for virtual endpoint
+        const errorMode = (kind === 'virtual') ? $('error-mode-select').value : 'normal';
+
         result = await postJSON('/api/start_live', {
             interface: selectedEndpoint,
             label,
-            kind
+            kind,
+            error_mode: errorMode
         });
     }
 

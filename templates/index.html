@@ -87,14 +87,11 @@
                     <input type="number" id="serial-baudrate" value="9600" min="300" max="115200" step="1">
                 </div>
 
-                <!-- Virtual Serial Error Injection -->
+                <!-- Unified Virtual Error Injection (for both Serial and CAN) -->
                 <div id="error-injection-row" class="config-row" hidden>
-                    <label>虚拟串口错误注入:</label>
+                    <label id="error-injection-label">虚拟错误注入:</label>
                     <select id="error-mode-select" class="config-select">
-                        <option value="normal">正常</option>
-                        <option value="invalid_mode">非法 Mode</option>
-                        <option value="invalid_quaternion">四元数异常</option>
-                        <option value="bad_crc">CRC 错误</option>
+                        <!-- Options populated dynamically based on transport -->
                     </select>
                 </div>
 
