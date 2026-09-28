@@ -6,8 +6,10 @@ git branch --show-current     # 查看当前分支
 
 ## 更新代码
 git fetch origin              # 获取远端更新
+git fetch origin --prune      # 更新远端信息+清理已经被远端删除的分支引用
 git switch <branch>           # 切换到指定分支
-git pull --ff-only            # 更新当前分支（仅快进）
+git pull --ff-only            # 更新当前分支（仅快进） 
+git switch -c ... -           # 抓取新分支 
 
 ## 提交代码
 git add <file>                # 暂存文件
