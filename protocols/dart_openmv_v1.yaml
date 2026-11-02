@@ -1,0 +1,73 @@
+# OpenMV Guided Dart Visual V1 - H750 -> F411 (receive-only profile)
+# Proposed team interface, NOT the original Shenzhen University UART frame.
+#
+# H750 UART3: 115200, 8N1, binary, no CRC/checksum.
+# Ready banner (once): FF 52 50 44 41 52 54 = FF + "RPDART".
+# F411 command: 0xAB wakes camera and starts fixed-delay timing.
+# V1 visual state frame: FF 01 | state | valid | dx_hi | dx_lo | dy_hi | dy_lo
+# state: 0 IDLE, 1 WAIT, 2 SEARCH, 3 DONE
+# valid: 0 no valid observation, 1 current new-image detection (SEARCH only).
+# dx/dy: signed int16, big-endian, pixel offset from image center (160,120).
+# valid=0 means dx=dy=0; SEARCH sends one frame per new image, and
+# IDLE/WAIT/DONE are proposed at 20 Hz (subject to hardware confirmation).
+#
+# Important: no CRC cannot detect every bit flip or false frame sync.
+# Require receiver timeouts; do not reuse stale measurements for control.
+# This profile only decodes the 8-byte state frame. The 7-byte ready banner
+# and inbound 0xAB command are intentionally outside the RX frame definition.
+
+transport:
+  type: serial
+  port: null
+  baudrate: 115200
+  bytesize: 8
+  parity: none
+  stopbits: 1
+  timeout_ms: 20
+  header: "FF01"
+
+messages:
+  - name: dart_visual_state
+    direction: rx
+    frame_length: 8
+    description: "Guided dart OpenMV V1 visual state, no CRC"
+    fields:
+      - name: header
+        offset: 0
+        type: uint8
+        enum:
+          255: FRAME_HEAD
+      - name: message_type
+        offset: 1
+        type: uint8
+        enum:
+          1: VISUAL_STATE
+      - name: state
+        offset: 2
+        type: uint8
+        enum:
+          0: IDLE
+          1: WAIT
+          2: SEARCH
+          3: DONE
+      - name: valid
+        offset: 3
+        type: uint8
+        enum:
+          0: NO_TARGET
+          1: TARGET_FOUND
+      - name: dx
+        offset: 4
+        type: int16
+        endian: big
+      - name: dy
+        offset: 6
+        type: int16
+        endian: big
+    validators:
+      - type: range
+        fields: [dx, "-160", "159"]
+      - type: range
+        fields: [dy, "-120", "119"]
+      - type: vision_observation
+        fields: [state, valid, dx, dy, "2"]

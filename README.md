@@ -292,6 +292,23 @@ python main.py monitor --protocol protocols/tongji_sentry.yaml --interface can0
 
 ---
 
+
+## Dart OpenMV V1（制导镖视觉协议）
+
+本仓库增加 `protocols/dart_openmv_v1.yaml`，用于 H750 → PC 的视觉状态 UART 接收与解析。它是**本队设计阶段的 V1 协议草案**，不是深圳大学原始 `main_final.py` 的 7 字节目标框协议，也没有实机验收结论。
+
+- 串口 `115200 / 8N1`；帧头 `FF 01`，帧长 **8 字节，无 CRC**。
+- 帧结构：`FF 01 state valid dx_H dx_L dy_H dy_L`，`dx/dy` 是大端有符号 `int16` 像素偏差。
+- 状态：`0=IDLE`、`1=WAIT`、`2=SEARCH`、`3=DONE`。只有 SEARCH 允许 `valid=1`；`valid=0` 时偏差应为 0。
+- 内置校验：状态/有效位枚举、偏差范围、SEARCH/valid 一致性及无效帧的零坐标约束。
+- H750 上电就绪标识 `FF 52 50 44 41 52 54`（`FF + "RPDART"`）和 F411 → H750 的启动字节 `0xAB` **不属于 8 字节视觉 RX 帧**；此工具的现有 Live 接收入口不会自动发送启动字节。需要电控或独立串口发送端触发。
+- 选择 **Serial / Dart OpenMV V1 / 实际串口端点**进行接收。请使用与硬件相同的 115200 波特率，不要使用仓库中同济串口示例的 9600 默认值。
+- 无 CRC 时，合法范围内的位错误可能完全无法发现；错误帧测试、通信超时及实际干扰环境测试仍是后续 H750/F411 集成测试的必要部分。
+
+运行协议专项测试：`pytest -q tests/test_dart_openmv_v1.py`。
+
+---
+
 ## 常见问题 FAQ
 
 ### Q: 为什么 Live 按钮显示"不可用"？
