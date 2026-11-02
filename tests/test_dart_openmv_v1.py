@@ -17,7 +17,7 @@ def rig():
 
 
 def make_frame(state=2, valid=1, dx=15, dy=-10):
-    return struct.pack(">2sBBhh", b"\\xff\\x01", state, valid, dx, dy)
+    return struct.pack(">2sBBhh", b"\xff\x01", state, valid, dx, dy)
 
 
 def checks(rig, frame):
@@ -33,7 +33,7 @@ def test_profile_has_expected_wire_contract(rig):
     assert protocol.transport.bytesize == 8
     assert protocol.transport.parity == "none"
     assert protocol.transport.stopbits == 1
-    assert protocol.transport.header == b"\\xff\\x01"
+    assert protocol.transport.header == b"\xff\x01"
     assert protocol.get_message_by_name("dart_visual_state").frame_length == 8
     data = make_frame()
     assert data == bytes.fromhex("FF 01 02 01 00 0F FF F6")
@@ -82,20 +82,20 @@ def test_rejects_illegal_observations(rig, frame, failure):
 
 
 def test_ready_banner_and_split_frame_do_not_collide():
-    framer = SerialFramer(header=b"\\xff\\x01", frame_length=8)
+    framer = SerialFramer(header=b"\xff\x01", frame_length=8)
     # Original ready banner has a single 0xFF followed by ASCII RPDART.
     assert framer.feed(bytes.fromhex("FF 52 50 44 41 52 54")) == []
     frame = make_frame()
-    assert framer.feed(b"\\xff") == []
+    assert framer.feed(b"\xff") == []
     assert framer.feed(frame[1:4]) == []
     assert framer.feed(frame[4:]) == [frame]
 
 
 def test_concatenated_and_noisy_stream():
-    framer = SerialFramer(header=b"\\xff\\x01", frame_length=8)
+    framer = SerialFramer(header=b"\xff\x01", frame_length=8)
     first = make_frame(0, 0, 0, 0)
     second = make_frame(2, 1, -12, 25)
-    assert framer.feed(b"\\x99\\x55" + first + second) == [first, second]
+    assert framer.feed(b"\x99\x55" + first + second) == [first, second]
 
 
 def test_no_crc_cannot_reliably_detect_plausible_corruption(rig):
