@@ -118,6 +118,57 @@ class Validator:
                     validator_def.fields
                 )
                 results.append(result)
+            elif validator_def.type == "range":
+                # Optional numeric range rule, enabled only by protocol YAML.
+                # fields: [field_name, inclusive_min, inclusive_max]
+                try:
+                    name, low, high = validator_def.fields
+                    value = decoded.fields[name]
+                    low, high = float(low), float(high)
+                    passed = low <= value <= high
+                    results.append(ValidationResult(
+                        check=f"{name.upper()}_RANGE",
+                        passed=passed,
+                        message=f"{name}={value}, allowed [{low:g}, {high:g}]"
+                    ))
+                except (KeyError, TypeError, ValueError) as exc:
+                    results.append(ValidationResult(
+                        check="RANGE",
+                        passed=False,
+                        message=f"Invalid range rule: {exc}"
+                    ))
+            elif validator_def.type == "vision_observation":
+                # Protocol-specific semantic rule with configurable field names;
+                # no effect on existing protocols unless explicitly requested.
+                # fields: [state, valid, dx, dy, search_state_value]
+                try:
+                    state_key, valid_key, dx_key, dy_key, search_state = validator_def.fields
+                    state_value = decoded.fields[state_key]
+                    valid_value = decoded.fields[valid_key]
+                    dx_value = decoded.fields[dx_key]
+                    dy_value = decoded.fields[dy_key]
+                    search_state = int(search_state)
+                    passed = (
+                        valid_value in (0, 1)
+                        and (valid_value == 0 or state_value == search_state)
+                        and (valid_value == 1 or (dx_value == 0 and dy_value == 0))
+                    )
+                    results.append(ValidationResult(
+                        check="VISION_OBSERVATION",
+                        passed=passed,
+                        message=(
+                            f"state={state_value}, valid={valid_value}, "
+                            f"dx={dx_value}, dy={dy_value}; "
+                            f"valid=1 requires state={search_state}, "
+                            "valid=0 requires zero offsets"
+                        )
+                    ))
+                except (KeyError, TypeError, ValueError) as exc:
+                    results.append(ValidationResult(
+                        check="VISION_OBSERVATION",
+                        passed=False,
+                        message=f"Invalid observation rule: {exc}"
+                    ))
 
         return results
 
